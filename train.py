@@ -62,26 +62,29 @@ def main():
             "mode": "binary",
             "model_name": model_config["model_name"],
             "epochs": training_config.get("num_train_epochs", 3),
+            # ajouter les parametres manquants
         })
 
-        output_dir = training_config["output_dir"]
+        output_dir = training_config.get("output_dir", "model.current")
+        # add an overwrite parameter
+        # make sure models aren't oversaved
 
         training_output = train(
-            train_df=train_df,
-            validation_df=validation_df,
-            model_name=model_config["model_name"],
-            output_dir=output_dir,
-            compute_metrics=compute_metrics_multiclass,
-            text_column="TEXT",
-            label_column="LABEL",
-            num_labels=num_classes,
-            max_length=model_config.get("max_length"),
-            learning_rate=float(training_config.get("learning_rate", 2e-5)),
-            per_device_train_batch_size=training_config.get("per_device_train_batch_size", 8),
-            per_device_eval_batch_size=training_config.get("per_device_eval_batch_size", 8),
-            num_train_epochs=training_config.get("num_train_epochs", 3),
-            weight_decay=training_config.get("weight_decay", 0.0),
-            seed=training_config.get("seed", 42),
+            train_df = train_df,
+            validation_df = validation_df,
+            model_name = model_config["model_name"],
+            output_dir = output_dir,
+            compute_metrics = compute_metrics_multiclass,
+            text_column = "TEXT", # force
+            label_column = "LABEL", # always the same
+            num_labels = num_classes, # always binary
+            max_length = model_config.get("max_length"),
+            learning_rate = float(training_config.get("learning_rate", 2e-5)),
+            per_device_train_batch_size = training_config.get("per_device_train_batch_size", 8),
+            per_device_eval_batch_size = training_config.get("per_device_eval_batch_size", 8),
+            num_train_epochs = training_config.get("num_train_epochs", 3),
+            weight_decay = training_config.get("weight_decay", 0.0),
+            seed = training_config.get("seed", 42),
         )
 
         # Predict
