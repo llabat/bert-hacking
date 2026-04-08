@@ -84,11 +84,10 @@ def sanitize_df(
 
     return df.reset_index(drop=True)
 
-def dichotomize(df: pd.DataFrame, label:str) -> tuple[pd.DataFrame, dict[str:int], dict[int:str]]:
-    if label not in df["LABEL"].values:
-        raise ValueError(f"Label ({label}) not in df[\"LABEL\"]. "
-                         f"Available labels: {df['LABEL'].unique()}")
-    df["LABEL"] = (df["LABEL"] == label).replace({True:label, False:f"not-{label}"})
-    label2id = {label:1, f"not-{label}": 0}
-    id2label = {1:label, 0: f"not-{label}"}
-    return df, label2id, id2label
+def make_ovr_dataset(df, target_class, label_column="LABEL"):
+    """
+    Extract a binary dataset (One-versus-Rest) from a dataset given a label
+    """
+    df = df.copy()
+    df[label_column] = (df[label_column] == target_class).astype(int)
+    return df
