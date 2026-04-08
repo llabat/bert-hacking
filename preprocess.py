@@ -84,50 +84,11 @@ def sanitize_df(
 
     return df.reset_index(drop=True)
 
-def dichotomize(df, threshold, positive_if="greater", label_column="LABEL", copy=True):
-    """
-    Convert a numeric label column into binary labels.
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Input dataframe.
-    threshold : int or float
-        Threshold used for dichotomization.
-    positive_if : str
-        One of:
-        - 'greater'         -> label > threshold
-        - 'greater_equal'   -> label >= threshold
-        - 'less'            -> label < threshold
-        - 'less_equal'      -> label <= threshold
-    label_column : str
-        Name of the label column to transform.
-    copy : bool
-        Whether to work on a copy of the dataframe.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Dataframe with dichotomized label column.
-    """
-    if copy:
-        df = df.copy()
-
-    if label_column not in df.columns:
-        raise ValueError(f"Column '{label_column}' not found in dataframe")
-
-    if positive_if == "greater":
-        df[label_column] = (df[label_column] > threshold).astype(int)
-    elif positive_if == "greater_equal":
-        df[label_column] = (df[label_column] >= threshold).astype(int)
-    elif positive_if == "less":
-        df[label_column] = (df[label_column] < threshold).astype(int)
-    elif positive_if == "less_equal":
-        df[label_column] = (df[label_column] <= threshold).astype(int)
-    else:
-        raise ValueError(
-            "positive_if must be one of: "
-            "'greater', 'greater_equal', 'less', 'less_equal'"
-        )
-
-    return df
+def dichotomize(df: pd.DataFrame, label:str) -> tuple[pd.DataFrame, dict[str:int], dict[int:str]]:
+    if label not in df["LABEL"].values:
+        raise ValueError(f"Label ({label}) not in df[\"LABEL\"]. "
+                         f"Available labels: {df['LABEL'].unique()}")
+    df["LABEL"] = (df["LABEL"] == label).replace({True:label, False:f"not-{label}"})
+    label2id = {label:1, f"not-{label}": 0}
+    id2label = {1:label, 0: f"not-{label}"}
+    return df, label2id, id2label
