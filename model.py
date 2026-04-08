@@ -108,7 +108,7 @@ def train(
         per_device_eval_batch_size=per_device_eval_batch_size,
         num_train_epochs=num_train_epochs,
         weight_decay=weight_decay,
-        evaluation_strategy=evaluation_strategy,
+        eval_strategy=evaluation_strategy,
         save_strategy=save_strategy,
         logging_strategy=logging_strategy,
         load_best_model_at_end=load_best_model_at_end,
