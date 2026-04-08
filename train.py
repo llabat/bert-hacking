@@ -161,9 +161,9 @@ def main():
                     df=test_df,
                     model=training_output["model"],
                     tokenizer=training_output["tokenizer"],
-                    text_column="TEXT",
-                    id_column="ID" if "ID" in test_df.columns else None,
-                    label_column="LABEL",
+                    text_column="TEXT", # force
+                    id_column="ID" if "ID" in test_df.columns else None, # force
+                    label_column="LABEL", # force
                     max_length=model_config.get("max_length"),
                     batch_size=training_config.get("per_device_eval_batch_size", 8),
                 )
