@@ -19,12 +19,11 @@ def tokenize_dataset(dataset, tokenizer, text_column="TEXT", label_column="LABEL
         tokenized = tokenizer(
             batch[text_column],
             truncation=True,
-            padding="max_length" if max_length is not None else False,
+            padding="max_length",
             max_length=max_length,
         )
-
-        if label_column in batch:
-            tokenized["labels"] = batch[label_column]
+        
+        tokenized["labels"] = batch[label_column]
 
         return tokenized
 
@@ -36,23 +35,23 @@ def train(
     validation_df,
     model_name,
     output_dir,
-    compute_metrics,
-    text_column="TEXT",
-    label_column="LABEL",
-    num_labels=None,
+    compute_metrics, # force
+    text_column="TEXT", # delete
+    label_column="LABEL", # delete
+    num_labels=2, # delete
     max_length=None,
     learning_rate=2e-5,
-    per_device_train_batch_size=8,
-    per_device_eval_batch_size=8,
+    per_device_train_batch_size=8, # same
+    per_device_eval_batch_size=8, # same
     num_train_epochs=3,
     weight_decay=0.0,
-    evaluation_strategy="epoch",
-    save_strategy="epoch",
-    logging_strategy="epoch",
-    load_best_model_at_end=True,
-    metric_for_best_model="f1",
-    greater_is_better=True,
-    save_total_limit=1,
+    evaluation_strategy="epoch", # force
+    save_strategy="epoch", # force
+    logging_strategy="epoch", # force
+    load_best_model_at_end=True, # force
+    metric_for_best_model="f1", # force
+    greater_is_better=True,  # force
+    save_total_limit=2, # force 2
     seed=42,
 ):
     """
@@ -66,6 +65,7 @@ def train(
     model = AutoModelForSequenceClassification.from_pretrained(
         model_name,
         num_labels=num_labels,
+        # add id2label / label2id
     )
 
     train_dataset = Dataset.from_pandas(train_df.reset_index(drop=True))
