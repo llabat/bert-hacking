@@ -1,0 +1,22 @@
+{
+    "af39b1aa39e1975a6e8f4e93c89fd54f51c71e4abf67339f9ff91425ab392b76": {
+        "N_train": 500,
+        "train_eval_test_ratios": [
+            80,
+            10,
+            10
+        ],
+        "model_name": "google-bert/bert-base-uncased",
+        "context_window_rel_to_max": 100,
+        "learning_rate": 0.0005,
+        "weight_decay": 0.0,
+        "dropout": 0.1,
+        "warmup_ratio": 0.05,
+        "pooling_method": "CLS",
+        "task_name": "ideology_news-left",
+        "dataset_train": "./data/ideology_news-stratified_year_balanced.csv",
+        "dataset_predict": "./data/ideology_news-dataset_for_inference.csv",
+        "score_on_test": 0.4117647058823529,
+        "prediction-csv": "./predictions_save/af39b1aa39e1975a6e8f4e93c89fd54f51c71e4abf67339f9ff91425ab392b76.csv"
+    }
+}

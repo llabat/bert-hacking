@@ -30,7 +30,7 @@ def create_hash(**kwargs)->str:
 
 def already_done(hash_:str):
     """check if the hash exists in the saving logs."""
-    with open("./saving_logs.json", "r") as file :
+    with open("./results/saving_logs.json", "r") as file :
         saving_logs = json.load(file)
     return hash_ in saving_logs
 
@@ -66,11 +66,11 @@ def clean():
 
 def to_saving_logs(hash_: str, to_save: dict|None):
     if to_save is None : return
-    with open("./saving_logs.json", "r") as file :
+    with open("./results/saving_logs.json", "r") as file :
         saving_logs = json.load(file)
 
     # Overwrite 
     saving_logs[hash_] = to_save
     
-    with open("./saving_logs.json", "w") as file:
+    with open("./results/saving_logs.json", "w") as file:
         json.dump(saving_logs, file, ensure_ascii=True, indent=4)

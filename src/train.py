@@ -1,13 +1,13 @@
 import sys
 import pandas as pd
 
-from config import load_config
-from environment import prepare_env
-from evaluate import compute_metrics_multiclass
-from experiment import create_hash
-from model import train, predict
-from preprocess import sanitize_df, make_ovr_dataset
-from splits import split_ds
+from functions_leo.config import load_config
+from functions_leo.environment import prepare_env
+from functions_leo.evaluate import compute_metrics_multiclass
+from functions_leo.experiment import create_hash
+from functions_leo.model import train, predict
+from functions_leo.preprocess import sanitize_df, make_ovr_dataset
+from functions_leo.splits import split_ds
 
 
 def main():

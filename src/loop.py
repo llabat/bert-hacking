@@ -9,7 +9,7 @@ from single_run import single_run
 TEST_MODE = True
 
 def loop():
-    with open("./config.json") as file:
+    with open("./config_files/config-loop.json") as file:
         config_json = json.load(file)
 
     parameter_names, parameters_values = extract_hyperparameters(config_json)
