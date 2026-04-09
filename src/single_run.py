@@ -79,10 +79,6 @@ def single_run(
             dichotomized_df, label2id, id2label = dichotomize(df, label)
             dichotomized_df_prediction, _, _ = dichotomize(df_prediction, label)
             
-            logger(dichotomized_df, type = "DEBUG", skip_line="after")
-            logger(label2id, type = "DEBUG", skip_line="after")
-            logger(dichotomized_df_prediction, type = "DEBUG", skip_line="after")
-            
             # Prepare tokenizer: model_name, context_window_rel_to_max
             tokenizer = load_tokenizer(**loop_config)
 
@@ -94,15 +90,10 @@ def single_run(
                 'truncation' : True,
                 'max_length' : max_length_capped
             }
-            logger(tokenization_parameters, type = "DEBUG", skip_line="after")
 
             # Prepare dataset: N_train, train_eval_test_ratios
             ds_loop: Dataset = sample_N_elements(dichotomized_df, SEED = 0, **loop_config)
             dsd_loop : DatasetDict = split_ds(ds_loop, SEED = 0, **loop_config)
-            logger(loop_config["model_name"], type = "DEBUG", skip_line="after")
-            logger(tokenizer, type = "DEBUG", skip_line="after")
-            logger(tokenizer("Hello world", **tokenization_parameters), type = "DEBUG", skip_line="after")
-            logger(dsd_loop, type = "DEBUG", skip_line="after")
             dsd_loop = dsd_loop.map(lambda row: tokenize_dataset_dict(row,label2id, tokenizer,tokenization_parameters))
 
             # Prepare model: model_name
@@ -157,10 +148,11 @@ def single_run(
             predictions : pd.DataFrame = predict(model, ds_pred, batch_size=BATCH_SIZE, id2label=id2label)
             logger(f"Inference done in {time() - tstart:.0f} s")
 
-            if not TEST_MODE or True: #TODELETE
+            if not TEST_MODE:
                 predictions.to_csv(f"./predictions_save/{hash_}.csv")
                 to_save = {
                     **loop_ID,
+                    "effective_context_window": max_length_capped,
                     "score_on_test": score_on_test,
                     "prediction-csv": f"./predictions_save/{hash_}.csv"
                 }                
