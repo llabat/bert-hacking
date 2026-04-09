@@ -1,0 +1,65 @@
+{
+    "datasets":[
+        {
+            "filepath-train": "./data/ideology_news-stratified_year_balanced.csv",
+            "name": "ideology_news",
+            "text_col": "content",
+            "label_col": "bias_text",
+            "id_col": "ID",
+            "filepath-predict": "./data/ideology_news-dataset_for_inference.csv"
+        }
+    ],
+    "data-hyperparameters":{
+        "N_train": [
+            500, 
+            1000, 
+            1500, 
+            2000
+        ],
+        "train_eval_test_ratios": [
+            [80, 10, 10],
+            [70, 15, 15]
+        ]
+    },
+    "model-hyperparameters":{
+        "model_name": [
+            "google-bert/bert-base-uncased",
+            "intfloat/multilingual-e5-large",
+            "FacebookAI/xlm-roberta-base",
+            "jhu-clsp/mmBERT-base",
+            "google-bert/bert-base-multilingual-cased"
+        ],
+        "context_window_rel_to_max":[
+            100,
+            75, 
+            50
+        ],
+        "learning_rate":[
+            5e-4,
+            1e-4,
+            1e-5, 
+            2e-5, 
+            5e-5
+        ],
+        "weight_decay":[
+            0.0,
+            0.01,
+            0.001,
+            0.05
+        ],
+        "dropout": [
+            0.1,
+            0.2
+        ],
+        "warmup_ratio":[
+            0.05,
+            0.1,
+            0.15
+        ],
+        "pooling_method":[
+            "CLS",
+            "mean",
+            "max"
+        ]
+    }
+}
