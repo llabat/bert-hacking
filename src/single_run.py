@@ -105,7 +105,7 @@ def single_run(
             logger(f"input_ids.shape:\n{set([len(l) for l in dsd_loop['train']['input_ids']])}", type="DEBUG")
             logger(f"attention_mask.shape:\n{set([len(l) for l in dsd_loop['train']['attention_mask']])}", type="DEBUG")
             logger(f"labels:\n{set(list(dsd_loop['train']['labels']))}", type="DEBUG")
-            assert False
+            
             # Prepare model: model_name
             model = AutoModelForSequenceClassification.from_pretrained(
                 loop_config["model_name"],
