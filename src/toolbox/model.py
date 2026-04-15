@@ -84,7 +84,7 @@ def train_model(
     except Exception as e:
         print(f"ERROR in train_model: \n{e}")
     finally:
-        del model, trainer, dsd
+        del trainer
         clean()
     return output
 

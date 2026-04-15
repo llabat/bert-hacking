@@ -61,6 +61,8 @@ def single_run(
     TOTAL_BATCH_SIZE = kwargs.get("TOTAL_BATCH_SIZE", 16)
     SEED = pick_seed(**kwargs)
 
+    output_dir = kwargs.get("output_dir","./models/current")
+
     logger("START LOOP" + "#" * 91, skip_line="before")
     logger(f"Starting Loop on task {task_name} {'(TEST_MODE)' if TEST_MODE else ''} and config {loop_config}")
 
@@ -110,7 +112,6 @@ def single_run(
             )
 
             # Prepare trainer: learning_rate, weight_decay, warmup_ratio, dropout
-            output_dir = kwargs.get("output_dir","./models/current")
             training_args = load_training_arguments(
                 output_dir=output_dir, 
                 batch_size_device=BATCH_SIZE, 
