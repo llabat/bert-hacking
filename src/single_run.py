@@ -96,12 +96,16 @@ def single_run(
                 'truncation' : True,
                 'max_length' : max_length_capped
             }
-
+            logger(f"MAX_length_capped: {max_length_capped}", type="DEBUG")
             # Prepare dataset: N_train, train_eval_test_ratios
             ds_loop: Dataset = sample_N_elements(dichotomized_df, SEED = SEED, **loop_config)
             dsd_loop : DatasetDict = split_ds(ds_loop, SEED = SEED, **loop_config)
             dsd_loop = dsd_loop.map(lambda row: tokenize_dataset_dict(row,label2id, tokenizer,tokenization_parameters))
-
+            logger(f"dsd_loop:\n{dsd_loop}", type="DEBUG")
+            logger(f"input_ids.shape:\n{set([len(l) for l in dsd_loop['train']['input_ids']])}", type="DEBUG")
+            logger(f"attention_mask.shape:\n{set([len(l) for l in dsd_loop['train']['attention_mask']])}", type="DEBUG")
+            logger(f"labels:\n{set(list(dsd_loop['train']['labels']))}", type="DEBUG")
+            assert False
             # Prepare model: model_name
             model = AutoModelForSequenceClassification.from_pretrained(
                 loop_config["model_name"],
