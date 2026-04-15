@@ -65,6 +65,7 @@ def single_run(
 
     logger("START LOOP" + "#" * 91, skip_line="before")
     logger(f"Starting Loop on task {task_name} {'(TEST_MODE)' if TEST_MODE else ''} and config {loop_config}")
+    logger(f"Using BATCH_SIZE: {BATCH_SIZE} - TOTAL_BATCH_SIZE: {TOTAL_BATCH_SIZE} - SEED: {SEED}")
 
     loop_ID = {
         **loop_config, 
