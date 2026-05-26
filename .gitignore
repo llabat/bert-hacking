@@ -7,3 +7,4 @@ predictions_save/
 **/libs
 **/__*
 *.html
+.cache

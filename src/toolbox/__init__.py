@@ -6,6 +6,7 @@ import json
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 if not Path("./data").is_dir(): os.mkdir("./data")
+if not Path("./.cache").is_dir(): os.mkdir("./.cache")
 if not Path("./models").is_dir(): os.mkdir("./models")
 if not Path("./config_files").is_dir(): os.mkdir("./config_files")
 if not Path("./results").is_dir(): os.mkdir("./results")

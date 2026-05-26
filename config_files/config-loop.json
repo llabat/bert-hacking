@@ -2,18 +2,19 @@
     "datasets":[
         {
             "filepath-train": "./data/ideology_news-dataset_for_training_400_50.csv",
-            "name": "ideology_news",
+            "name": "ideology_news-chunked-400-50",
             "text_col": "content",
             "label_col": "bias_text",
             "id_col": "ID",
             "id_chunk_col": "ID-chunk",
-            "filepath-predict": "./data/ideology_news-dataset_for_inference_400_50.csv"
+            "filepath-predict": "./data/ideology_news-dataset_for_inference_400_50.csv",
+            "extra_cols_to_keep" : ["year"]
         }
     ],
     "data-hyperparameters":{
         "N_annotated": [
-            500, 
             1000, 
+            500, 
             1500, 
             2000
         ],
@@ -21,6 +22,16 @@
             [80, 10, 10],
             [70, 15, 15],
             [50, 10, 40]
+        ],
+        "sampling_method" : [
+            {"balance":"random"},
+            {"balance":0.25},
+            {"balance":0.50},
+            {"balance":0.75},
+            {"balance":"random", "stratified": "year"},
+            {"balance":0.25    , "stratified": "year"},
+            {"balance":0.50    , "stratified": "year"},
+            {"balance":0.75    , "stratified": "year"}
         ]
     },
     "model-hyperparameters":{

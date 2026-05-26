@@ -71,8 +71,9 @@ def single_run(
         }
 
         # Prepare dataset: N_annotated, splits_ratio, seed
-        ds_loop: pd.DataFrame = sample_N_elements(dichotomized_df, loop_config)#FIXME Only one sampling method implemented: random
+        ds_loop, effective_distrib = sample_N_elements(dichotomized_df, label2id, loop_config)
         logger(f"Sample {ds_loop['ID'].nunique()} documents; corresponds to {len(ds_loop)} rows")
+        logger(f"Effective distribution: {effective_distrib} — requested : {loop_config.sampling_method}")
         dsd_loop : DatasetDict = split_ds(ds_loop, loop_config)
         dsd_loop = dsd_loop.map(lambda row: tokenize_dataset_dict(row,label2id, tokenizer,tokenization_parameters))
         
@@ -121,7 +122,8 @@ def single_run(
                 **loop_config.to_dict(),
                 "effective_context_window": max_length_capped,
                 "score_on_test": score_on_test,
-                "prediction-csv": f"./predictions_save/{hash_}.csv"
+                "prediction-csv": f"./predictions_save/{hash_}.csv",
+                "effective_distrib": effective_distrib
             }                
             if "ID_CHUNK" in predictions.columns:
                 (

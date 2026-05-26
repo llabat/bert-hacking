@@ -1,3 +1,5 @@
+import os 
+
 from datasets import Dataset, DatasetDict
 import numpy as np
 import pandas as pd 
@@ -5,7 +7,16 @@ from transformers import AutoConfig
 
 from . import LoopConfig
 
-def sanitize_df(df: pd.DataFrame, text_col: str, label_col:str, id_col:str, id_chunk_col: str|None = None, **kwargs)->pd.DataFrame:
+def sanitize_df(
+    df: pd.DataFrame, 
+    text_col: str, 
+    label_col:str, 
+    id_col:str, 
+    id_chunk_col: str|None = None, 
+    extra_cols_to_keep : list[str]|None=None, 
+    **kwargs
+)->pd.DataFrame:
+    """"""
     if not np.isin([text_col, label_col, id_col], df.columns).all():
         raise ValueError(
             f"The columns you provided cannot be found in the dataframe. "
@@ -23,6 +34,8 @@ def sanitize_df(df: pd.DataFrame, text_col: str, label_col:str, id_col:str, id_c
         df = df.rename(columns={id_chunk_col: "ID_CHUNK"})
         main_columns += ["ID_CHUNK"]
         column_for_index = "ID_CHUNK"
+    if extra_cols_to_keep: 
+        main_columns += extra_cols_to_keep
 
     if np.array([df[col].isna().sum() > 0 for col in main_columns]).any():
         raise ValueError(
@@ -32,7 +45,7 @@ def sanitize_df(df: pd.DataFrame, text_col: str, label_col:str, id_col:str, id_c
             f"\t LABEL: {df['LABEL'].isna().sum()}"
         )
     if df[column_for_index].is_unique:
-        return df[main_columns].set_index(column_for_index)
+        return df[main_columns]
     else:
         raise ValueError("ID column contains non-unique values.")
 
@@ -68,12 +81,64 @@ def cap_max_length(max_n_tokens : int, loop_config: LoopConfig) -> int:
     model_max = AutoConfig.from_pretrained(loop_config.model_name).max_position_embeddings - 1
     return int(min(max_n_tokens, model_max))
 
-def sample_N_elements(df: pd.DataFrame, loop_config: LoopConfig)->pd.DataFrame:
+def _sample_N_elements(df: pd.DataFrame, label2id : dict, loop_config: LoopConfig)->pd.DataFrame:
     """
     Sample N elements
     """
-    id_samples = pd.Series(df["ID"].unique()).sample(loop_config.N_annotated, random_state=loop_config.seed)
+    stratification_col = loop_config.sampling_method["stratified"]
+    balance = loop_config.sampling_method["balance"]
+    df = df.copy()
+    if stratification_col is None:
+        # Create dummy stratification column
+        df["stratification_col"] = 0
+        stratification_col = "stratification_col"
+
+    df_for_ID_sampling = df.groupby("ID").sample(1).set_index("ID")
+    df_for_ID_sampling["LABEL"] = df_for_ID_sampling["LABEL"].map(label2id)
+    N_per_strata = int(loop_config.N_annotated / 
+                       df_for_ID_sampling[stratification_col].nunique())
+
+    id_samples = []
+    for _, subdf in df_for_ID_sampling.groupby(stratification_col):
+        batch_indexes = []
+        for _ in range(N_per_strata):
+            local_distrib = subdf.drop(index=batch_indexes)["LABEL"].mean()
+            if balance == "random":
+                local_weights = None
+            else: 
+                local_weights = (
+                    subdf.drop(index=batch_indexes)
+                    ["LABEL"]
+                    .map({
+                        1: balance / local_distrib, 
+                        0 : (1 - balance) / (1 - local_distrib)
+                    })
+                )
+                local_weights = local_weights / sum(local_weights)
+            batch_indexes += [np.random.choice(
+                list(subdf.drop(index=batch_indexes).index), 
+                p = local_weights
+            )]
+        id_samples += batch_indexes
     return df.loc[np.isin(df["ID"], id_samples)]
+
+def sample_N_elements(df: pd.DataFrame, label2id : dict, loop_config: LoopConfig)->tuple[pd.DataFrame, dict]:
+    """
+    Sample N elements with cache 
+    """
+    stratification_col = loop_config.sampling_method["stratified"]
+    balance = loop_config.sampling_method["balance"]
+    cache_file = (f"{loop_config.task_name}-{loop_config.N_annotated}-"
+        f"{stratification_col}-{balance}.csv")
+    if cache_file in os.listdir("./.cache"):
+        out_df = pd.read_csv(f"./.cache/{cache_file}")
+    else: 
+        out_df = _sample_N_elements(df, label2id, loop_config)
+        out_df.to_csv(f"./.cache/{cache_file}", index=False)
+    df_for_effective_distrib_calc = out_df.groupby("ID").sample(n=1,random_state=0)
+    label, count = np.unique_counts(df_for_effective_distrib_calc['LABEL'])
+    effective_distrib = {l:float(c / sum(count)) for l,c in zip(label, count)}
+    return out_df, effective_distrib
 
 def split_ds(df : pd.DataFrame, loop_config: LoopConfig)-> DatasetDict:
     """

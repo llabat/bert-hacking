@@ -4,7 +4,7 @@ class LoopConfig:
 
     LOOP_DEFAULT = {
         "N_annotated": 500,
-        "sampling_method": "random",
+        "sampling_method": {"balance": "random", "stratified": None},
         "splits_ratio": [80, 10, 10],
 
         "model_name": "google-bert/bert-base-uncased",
@@ -21,7 +21,7 @@ class LoopConfig:
 
     VARIABLES_TYPE = {
         "N_annotated": int,
-        "sampling_method": str,
+        "sampling_method": dict, # Specific case handled in self.__extract_value
         "splits_ratio": list[int], # Specific case handled in self.__extract_value
 
         "model_name": str, 
@@ -54,10 +54,31 @@ class LoopConfig:
     def __extract_value(self, param_name:str, **kwargs):
         if param_name == "splits_ratio":
             splits_ratio_as_list = list(kwargs.get("splits_ratio", self.LOOP_DEFAULT["splits_ratio"]))
-            return [int(v) for v in splits_ratio_as_list]
-        return self.VARIABLES_TYPE[param_name](
-            kwargs.get(param_name, self.LOOP_DEFAULT[param_name])
-        )
+            try: 
+                out = [int(v) for v in splits_ratio_as_list]
+                return out 
+            except: 
+                raise ValueError((f"Error parsing splits_ratio, should receive a "
+                    f"list of ints, received {kwargs.get('splits_ratio', None)}"))
+        if param_name == "sampling_method":
+            sampling_method = kwargs.get("sampling_method", self.LOOP_DEFAULT["splits_ratio"])
+            try:
+                sampling_method = dict(sampling_method)
+                return{
+                    "balance": sampling_method.get("balance", self.LOOP_DEFAULT["sampling_method"]["balance"]),
+                    "stratified": sampling_method.get("stratified", self.LOOP_DEFAULT["sampling_method"]["stratified"])
+                }
+            except:
+                raise ValueError((f"Error parsing sampling method format, "
+                    f"should be a dictionary but received: {kwargs.get('sampling_method', None)}"))
+        try: 
+            out = self.VARIABLES_TYPE[param_name](
+                kwargs.get(param_name, self.LOOP_DEFAULT[param_name])
+            )
+            return out 
+        except:
+            raise ValueError((f"Error parsing {param_name}, should be a "
+                f"{self.VARIABLES_TYPE[param_name]} but received {kwargs.get(param_name, None)}"))
 
 
     def __init__(self, task_name : str, dichotomization_label : str, **kwargs) -> None:
