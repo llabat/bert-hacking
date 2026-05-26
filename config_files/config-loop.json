@@ -1,12 +1,13 @@
 {
     "datasets":[
         {
-            "filepath-train": "./data/ideology_news-stratified_year_balanced.csv",
+            "filepath-train": "./data/ideology_news-dataset_for_training_400_50.csv",
             "name": "ideology_news",
             "text_col": "content",
             "label_col": "bias_text",
             "id_col": "ID",
-            "filepath-predict": "./data/ideology_news-dataset_for_inference.csv"
+            "id_chunk_col": "ID-chunk",
+            "filepath-predict": "./data/ideology_news-dataset_for_inference_400_50.csv"
         }
     ],
     "data-hyperparameters":{
