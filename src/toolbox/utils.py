@@ -1,3 +1,4 @@
+import os
 import hashlib 
 import json 
 from gc import collect as gc_collect
@@ -106,3 +107,14 @@ def aggregate_predictions(
         raise ValueError(f"criterion not provided. Received threshold: {threshold}; at_least: {at_least}")
     df_aggregated = df_aggregated.astype(int).replace(id2label).reset_index()
     return df_aggregated.set_index("ID")
+
+def retrieve_trainer_logs(directory: str) -> dict:
+    """"""
+    sorted_checkpoints = sorted(
+        os.listdir(directory),
+        key = lambda checkpoint : int(checkpoint.removeprefix("checkpoint-"))
+    )
+    last_checkpoint = sorted_checkpoints[-1]
+    with open(f"{directory}/{last_checkpoint}/trainer_state.json", "r") as file:
+        content = json.load(file)
+    return content.get("log_history", "failed retrieving the logs")

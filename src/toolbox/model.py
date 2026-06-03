@@ -10,7 +10,7 @@ from transformers import TrainingArguments, Trainer, EvalPrediction
 from tqdm import tqdm
 
 from . import LoopConfig
-from .utils import get_device, clean
+from .utils import get_device, clean, retrieve_trainer_logs
 
 def load_training_arguments(loop_config: LoopConfig) -> TrainingArguments:
     device = get_device()
@@ -62,10 +62,10 @@ def train_model(
     training_args : TrainingArguments,
     dsd : DatasetDict,
     loop_config: LoopConfig,
-) -> str :
+) -> tuple[str, dict] :
     """
     """
-    output = None
+    output, trainer_logs = None, None
     try: 
         device = get_device()
         for split in dsd:
@@ -84,12 +84,13 @@ def train_model(
         print(f"Begin training on {device}")
         trainer.train()
         output = trainer.state.best_model_checkpoint
+        trainer_logs = retrieve_trainer_logs(training_args.output_dir)
     except Exception as e:
         print(f"ERROR in train_model: \n{e}")
     finally:
         del trainer
         clean()
-    return output
+    return output, trainer_logs
 
 def predict(model, ds : Dataset, loop_config: LoopConfig, id2label: dict[int:str])->pd.DataFrame:
     if "input_ids" not in ds.features:

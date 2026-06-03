@@ -97,7 +97,7 @@ def single_run(
 
         # Launch training: test_mode
         tstart = time()
-        best_model_checkpoint = train_model(model, training_args,dsd_loop,loop_config)
+        best_model_checkpoint, trainer_logs = train_model(model, training_args,dsd_loop,loop_config)
         logger(f"Training done in {time() - tstart:.0f}s - best model checkpoint: {best_model_checkpoint}")
         run_timer["training"] = time() - run_timer["training"] 
         
@@ -138,6 +138,7 @@ def single_run(
                 "prediction-on-test-csv": f"./predictions_save/{hash_}-on-test.csv",
                 "prediction-csv": f"./predictions_save/{hash_}.csv",
                 "effective_distrib": effective_distrib,
+                "trainer-logs": trainer_logs,
             }                
             if "ID_CHUNK" in predictions.columns:
                 run_timer["saving_predictions_aggregated"] = time()
