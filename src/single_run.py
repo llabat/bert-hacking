@@ -148,6 +148,7 @@ def single_run(
                 )
                 logs_to_save["prediction-on-test-aggregated-csv"] = f"./predictions_save/{hash_}-on-test-aggregated.csv"
                 logs_to_save["prediction-aggregated-csv"] = f"./predictions_save/{hash_}-aggregated.csv"
+                logs_to_save["aggregation-strategy"] = {"at_least": AT_LEAST, "threshold":THRESHOLD}
                 run_timer["saving_predictions_aggregated"] = time() - run_timer["saving_predictions_aggregated"] 
             logs_to_save["run_timer"] = run_timer
             logger(f"Information saved with hash {hash_}")
