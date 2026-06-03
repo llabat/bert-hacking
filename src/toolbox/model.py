@@ -19,7 +19,7 @@ def load_training_arguments(loop_config: LoopConfig) -> TrainingArguments:
         os.system(f'rm -rf {loop_config.output_dir}')
 
     return TrainingArguments(
-        bf16=True, # Faster training
+        bf16= str(device) == True, # Faster training
         # Hyperparameters
         num_train_epochs = loop_config.n_epochs,
         learning_rate = loop_config.learning_rate,
@@ -38,7 +38,7 @@ def load_training_arguments(loop_config: LoopConfig) -> TrainingArguments:
         load_best_model_at_end = True,
         save_total_limit =  2,
         disable_tqdm = False, 
-        dataloader_pin_memory = False if str(device) == "cuda" else True,
+        dataloader_pin_memory = str(device) != "cuda",
         # SEED
         seed = loop_config.seed
     )
