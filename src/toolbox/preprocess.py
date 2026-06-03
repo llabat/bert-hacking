@@ -95,6 +95,7 @@ def _sample_N_documents(df: pd.DataFrame, label2id : dict, loop_config: LoopConf
 
     df_for_ID_sampling = df.groupby("ID").sample(1).set_index("ID")
     df_for_ID_sampling["LABEL"] = df_for_ID_sampling["LABEL"].map(label2id)
+    rng = np.random.default_rng(seed=loop_config.seed)
     N_per_strata = int(loop_config.N_annotated / 
                        df_for_ID_sampling[stratification_col].nunique())
 
@@ -115,7 +116,7 @@ def _sample_N_documents(df: pd.DataFrame, label2id : dict, loop_config: LoopConf
                     })
                 )
                 local_weights = local_weights / sum(local_weights)
-            batch_indexes += [np.random.choice(
+            batch_indexes += [rng.choice(
                 list(subdf.drop(index=batch_indexes).index), 
                 p = local_weights
             )]
