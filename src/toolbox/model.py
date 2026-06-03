@@ -1,4 +1,5 @@
 import os 
+import shutil
 
 from datasets import DatasetDict, Dataset
 import numpy as np
@@ -16,7 +17,7 @@ def load_training_arguments(loop_config: LoopConfig) -> TrainingArguments:
 
     # Overwrite output dir
     if os.path.isdir(loop_config.output_dir):
-        os.system(f'rm -rf {loop_config.output_dir}')
+        shutil.rmtree(loop_config.output_dir)
 
     return TrainingArguments(
         bf16= str(device) == "cuda", # Faster training
