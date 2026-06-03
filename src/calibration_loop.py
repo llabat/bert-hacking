@@ -35,8 +35,7 @@ df_prediction = df.iloc[:2].copy()
 
 _, logs_to_save = single_run(df, df_prediction, loop_config)
 
-os.system(f"cp {logs_to_save['prediction-csv']} ./calibration/predictions.csv")
-os.system(f"rm {logs_to_save['prediction-csv']}")
+os.system(f"mv {logs_to_save['prediction-csv']} ./calibration/predictions.csv")
 logs_to_save["prediction-csv"] = "./calibration/predictions.csv"
 with open("./calibration/logs.json", 'w') as file:
     json.dump(logs_to_save, file, indent=4, ensure_ascii=True)
