@@ -104,11 +104,11 @@ def single_run(
         # Reload model from checkpoint: test_mode, device_batch_size
         run_timer["evaluation"] = time()
         model = AutoModelForSequenceClassification.from_pretrained(best_model_checkpoint)
-        predictions : pd.DataFrame = predict(model, dsd_loop["test"], loop_config, id2label=id2label)
-        predictions_aggregated : pd.DataFrame = aggregate_predictions(predictions, label2id, id2label, THRESHOLD, AT_LEAST)
+        predictions_on_test : pd.DataFrame = predict(model, dsd_loop["test"], loop_config, id2label=id2label)
+        predictions_on_test_aggregated : pd.DataFrame = aggregate_predictions(predictions_on_test, label2id, id2label, THRESHOLD, AT_LEAST)
         score_on_test = f1_score(
-            y_true = predictions_aggregated["GS-LABEL"], 
-            y_pred = predictions_aggregated["PRED-LABEL"], 
+            y_true = predictions_on_test_aggregated["GS-LABEL"], 
+            y_pred = predictions_on_test_aggregated["PRED-LABEL"], 
             average="macro",
             zero_division=np.nan
         )
@@ -128,21 +128,25 @@ def single_run(
 
         if not loop_config.test_mode:
             run_timer["saving_predictions"] = time()
+            predictions_on_test.to_csv(f"./predictions_save/{hash_}-on-test.csv")
             predictions.to_csv(f"./predictions_save/{hash_}.csv")
             run_timer["saving_predictions"] = time() - run_timer["saving_predictions"]
             logs_to_save = {
                 **loop_config.to_dict(),
                 "effective_context_window": max_length_capped,
                 "score_on_test": score_on_test,
+                "prediction-on-test-csv": f"./predictions_save/{hash_}-on-test.csv",
                 "prediction-csv": f"./predictions_save/{hash_}.csv",
                 "effective_distrib": effective_distrib,
             }                
             if "ID_CHUNK" in predictions.columns:
                 run_timer["saving_predictions_aggregated"] = time()
+                predictions_on_test_aggregated.to_csv(f"./predictions_save/{hash_}-on-test-aggregated.csv")
                 (
                     aggregate_predictions(predictions, label2id, id2label, THRESHOLD, AT_LEAST)
                     .to_csv(f"./predictions_save/{hash_}-aggregated.csv")
                 )
+                logs_to_save["prediction-on-test-aggregated-csv"] = f"./predictions_save/{hash_}-on-test-aggregated.csv"
                 logs_to_save["prediction-aggregated-csv"] = f"./predictions_save/{hash_}-aggregated.csv"
                 run_timer["saving_predictions_aggregated"] = time() - run_timer["saving_predictions_aggregated"] 
             logs_to_save["run_timer"] = run_timer
