@@ -27,6 +27,7 @@ from toolbox import (
     aggregate_predictions
 )
 
+OVERLAP = 50
 AT_LEAST = 1
 THRESHOLD = None
 
@@ -50,6 +51,7 @@ def single_run(
     """
 
     logger = CustomLogger("./custom_logs")
+    loop_config.set_fixed_parameters(OVERLAP, AT_LEAST, THRESHOLD)
     run_timer = {}
 
     # Use time as hash
@@ -59,6 +61,7 @@ def single_run(
         # Dichotomization: dichotomization_label
         run_timer["preprocess_data"] = time()
         dichotomized_df, label2id, id2label = dichotomize(df, loop_config)
+        loop_config.set_label_id_mapper(label2id, id2label)
         dichotomized_df_prediction, _, _ = dichotomize(df_prediction, loop_config)
         
         # Prepare tokenizer: model_name
@@ -105,7 +108,7 @@ def single_run(
         run_timer["evaluation"] = time()
         model = AutoModelForSequenceClassification.from_pretrained(best_model_checkpoint)
         predictions_on_test : pd.DataFrame = predict(model, dsd_loop["test"], loop_config, id2label=id2label)
-        predictions_on_test_aggregated : pd.DataFrame = aggregate_predictions(predictions_on_test, label2id, id2label, THRESHOLD, AT_LEAST)
+        predictions_on_test_aggregated : pd.DataFrame = aggregate_predictions(predictions_on_test, loop_config)
         score_on_test = f1_score(
             y_true = predictions_on_test_aggregated["GS-LABEL"], 
             y_pred = predictions_on_test_aggregated["PRED-LABEL"], 
@@ -144,12 +147,12 @@ def single_run(
                 run_timer["saving_predictions_aggregated"] = time()
                 predictions_on_test_aggregated.to_csv(f"./predictions_save/{hash_}-on-test-aggregated.csv")
                 (
-                    aggregate_predictions(predictions, label2id, id2label, THRESHOLD, AT_LEAST)
+                    aggregate_predictions(predictions, loop_config)
                     .to_csv(f"./predictions_save/{hash_}-aggregated.csv")
                 )
                 logs_to_save["prediction-on-test-aggregated-csv"] = f"./predictions_save/{hash_}-on-test-aggregated.csv"
                 logs_to_save["prediction-aggregated-csv"] = f"./predictions_save/{hash_}-aggregated.csv"
-                logs_to_save["aggregation-strategy"] = {"at_least": AT_LEAST, "threshold":THRESHOLD}
+                logs_to_save["aggregation-strategy"] = {"at_least": loop_config.AT_LEAST, "threshold":loop_config.THRESHOLD}
                 run_timer["saving_predictions_aggregated"] = time() - run_timer["saving_predictions_aggregated"] 
             logs_to_save["run_timer"] = run_timer
             logger(f"Information saved with hash {hash_}")

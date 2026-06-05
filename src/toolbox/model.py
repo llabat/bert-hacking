@@ -92,7 +92,7 @@ def train_model(
         clean()
     return output, trainer_logs
 
-def predict(model, ds : Dataset, loop_config: LoopConfig, id2label: dict[int:str])->pd.DataFrame:
+def predict(model, ds : Dataset, loop_config: LoopConfig)->pd.DataFrame:
     if "input_ids" not in ds.features:
         raise ValueError("Please tokenize texts first")
     if "attention_mask" not in ds.features:
@@ -126,7 +126,7 @@ def predict(model, ds : Dataset, loop_config: LoopConfig, id2label: dict[int:str
                     "ID": id,
                     "ID_CHUNK": id_chunk,
                     "GS-LABEL": label,
-                    "PRED-LABEL": id2label[int(pred)],
+                    "PRED-LABEL": loop_config.id2label[int(pred)],
                 }
                 for id, id_chunk, label, pred in zip(
                     batch["ID"], 
@@ -140,7 +140,7 @@ def predict(model, ds : Dataset, loop_config: LoopConfig, id2label: dict[int:str
                 {
                     "ID": id,
                     "GS-LABEL": label,
-                    "PRED-LABEL": id2label[int(pred)],
+                    "PRED-LABEL": loop_config.id2label[int(pred)],
                 }
                 for id, label, pred in zip(batch["ID"], batch["LABEL"], y_pred)
             ]

@@ -121,6 +121,18 @@ class LoopConfig:
         # Ensure device_batch_size <= batch_size 
         self.device_batch_size = min(self.batch_size, self.device_batch_size)
 
+        self.label2id, self.id2label = None, None
+        self.OVERLAP, self.AT_LEAST, self.THRESHOLD = None, None, None
+
+    def set_fixed_parameters(self, OVERLAP: int, AT_LEAST: int|None, THRESHOLD:int|None)->None:
+        self.OVERLAP = OVERLAP 
+        self.AT_LEAST = AT_LEAST
+        self.THRESHOLD = THRESHOLD
+
+    def set_label_id_mapper(self, label2id: dict, id2label: dict) -> None:
+        self.label2id = label2id
+        self.id2label = id2label
+
     def to_dict(self) -> dict:
         return {key : self.__getattribute__(key) for key in self.VARIABLES_TO_CHECK_FOR_EQUALITY}
     
