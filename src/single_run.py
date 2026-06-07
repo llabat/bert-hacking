@@ -53,6 +53,7 @@ def single_run(
 
     # Use time as hash
     hash_, logs_to_save = create_hash(loop_config), None
+    logger(hash_)
     dichotomized_df, dichotomized_df_prediction, dsd_loop, model, ds_pred = (None,)*5
     try: 
         # Dichotomization: dichotomization_label
