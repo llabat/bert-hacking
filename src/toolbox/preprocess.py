@@ -207,6 +207,7 @@ def join_tokenized_texts(N_documents: dict[str:dict], tokenized_texts:dict[str:d
     for id in N_documents:
         N_documents[id].update({
             **tokenized_texts[id], 
+            "ID": id,
             "N_tokens": len(tokenized_texts[id]["input_ids"])
         })
     return N_documents
