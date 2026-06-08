@@ -15,7 +15,7 @@ from single_run import single_run
 
 TEST_MODE = False
 DEVICE_BATCH_SIZE = 4
-DEVICE_BATCH_SIZE_FOR_PREDICTION = 16
+DEVICE_BATCH_SIZE_FOR_PREDICTION = 8
 logger = CustomLogger("./custom_logs")
 
 def loop():
