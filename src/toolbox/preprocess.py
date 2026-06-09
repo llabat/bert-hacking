@@ -218,22 +218,22 @@ def chunk_texts(N_documents: dict[str:dict], chunk_length: int, overlap: int) ->
     output = {}
     for id_doc, row in N_documents.items():
         if row["N_tokens"] > chunk_length:
-            n_indices = row["N_tokens"] - 2 # To account for "CLS" and "SEP"
-            s, e, i_chunk = 0, effective_chunk_length, 0
-            while s < n_indices:
+            index_max = row["N_tokens"] - 2 # length - 1, -1 to not sample SEP twice
+            s, e, i_chunk = 1, effective_chunk_length + 1, 0 # Start at 1 not to  sample CLS twice
+            while s < index_max:
                 # skip chunks that are too small
-                if min(e, n_indices) - s < 0.1 * chunk_length: break
+                if min(e, index_max) - s < 0.1 * chunk_length: break
 
                 output[f"{id_doc}-{i_chunk}"] = {
                     **{k:v for k,v in row.items() if k not in ["input_ids", "attention_mask"]}, 
                     "input_ids": [
                         row["input_ids"][0], 
-                        *row["input_ids"][s:min(e, n_indices)], 
+                        *row["input_ids"][s:min(e, index_max)], 
                         row["input_ids"][-1]
                     ], 
                     "attention_mask": [
                         row["attention_mask"][0], 
-                        *row["attention_mask"][s:min(e, n_indices)], 
+                        *row["attention_mask"][s:min(e, index_max)], 
                         row["attention_mask"][-1]
                     ],
                     "ID" : id_doc,
