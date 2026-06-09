@@ -111,7 +111,7 @@ def single_run(
 
         # Predict on full data
         run_timer["prediction"] = time() 
-        N_documents, _ = tokenize_chunk_pad(dichotomized_df_prediction, "inference", loop_config, force_max_length_capped=max_length_capped)
+        N_documents, max_length_capped_inference = tokenize_chunk_pad(dichotomized_df_prediction, "inference", loop_config)
         ds_pred = Dataset.from_list([d for d in N_documents.values()])
         del N_documents
         logger("Start Inference")
@@ -127,7 +127,8 @@ def single_run(
             run_timer["saving_predictions"] = time() - run_timer["saving_predictions"]
             logs_to_save = {
                 **loop_config.to_dict(),
-                "effective_context_window": max_length_capped,
+                "effective_context_window_for_training": max_length_capped,
+                "effective_context_window_for_inference": max_length_capped_inference,
                 "score_on_test": score_on_test,
                 "prediction-on-test-csv": f"./predictions_save/{hash_}-on-test.csv",
                 "prediction-csv": f"./predictions_save/{hash_}.csv",
