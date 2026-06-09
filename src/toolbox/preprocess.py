@@ -265,17 +265,18 @@ def format_labels(N_documents: dict[str:dict], loop_config: LoopConfig) -> dict[
     return N_documents
 
 def tokenize_chunk_pad(
-    df: pd.DataFrame, 
+    df_full : pd.DataFrame, 
+    df_sample: pd.DataFrame, 
     df_name: str, 
     loop_config: LoopConfig, 
     force_max_length_capped: int|None=None
 ) -> tuple[DatasetDict, int]:
     """"""
     tokenizer = load_tokenizer(loop_config)
-    tokenized_texts = get_tokenized_texts(df[["ID", "TEXT"]], df_name, tokenizer, loop_config) # TODO: implement partial json loader
+    tokenized_texts = get_tokenized_texts(df_full[["ID", "TEXT"]], df_name, tokenizer, loop_config) # TODO: implement partial json loader
     
     # swith to dict[ID:row] format for easier and faster formatting
-    N_documents = df.set_index("ID").T.to_dict()
+    N_documents = df_sample.set_index("ID").T.to_dict()
     N_documents = join_tokenized_texts(N_documents, tokenized_texts)
     N_documents = format_labels(N_documents, loop_config)
     
