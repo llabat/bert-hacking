@@ -68,7 +68,12 @@ def single_run(
         logger(f"Sample {len(df_sample)} rows")
         logger(f"Effective distribution: {effective_distrib} — requested : {loop_config.sampling_method}")
         # Prepare tokenize texts: model_name
-        N_documents, max_length_capped = tokenize_chunk_pad(df_sample, "training", loop_config)
+        N_documents, max_length_capped = tokenize_chunk_pad(
+            df_full = dichotomized_df, 
+            df_sample = df_sample, 
+            df_name = "training", 
+            loop_config = loop_config
+        )
         dsd_loop = split_ds(N_documents, loop_config)
         del df_sample, N_documents
         logger(dsd_loop)
@@ -111,7 +116,12 @@ def single_run(
 
         # Predict on full data
         run_timer["prediction"] = time() 
-        N_documents, max_length_capped_inference = tokenize_chunk_pad(dichotomized_df_prediction, "inference", loop_config)
+        N_documents, max_length_capped_inference = tokenize_chunk_pad(
+            df_full = dichotomized_df_prediction,
+            df_sample = dichotomized_df_prediction, 
+            df_name = "inference", 
+            loop_config = loop_config
+        )
         ds_pred = Dataset.from_list([d for d in N_documents.values()])
         del N_documents
         logger("Start Inference")

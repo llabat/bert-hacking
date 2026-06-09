@@ -93,6 +93,7 @@ def aggregate_predictions(
     if isinstance(loop_config.THRESHOLD, float): 
         df_aggregated = (
             df
+            [["ID", "GS-LABEL", "PRED-LABEL"]] # Exclude ID_CHUNK
             .groupby("ID")
             .agg("mean")
         )
@@ -100,6 +101,7 @@ def aggregate_predictions(
     elif isinstance(loop_config.AT_LEAST, int):
         df_aggregated = (
             df
+            [["ID", "GS-LABEL", "PRED-LABEL"]] # Exclude ID_CHUNK
             .groupby("ID")
             .agg("sum")
         )
@@ -110,11 +112,20 @@ def aggregate_predictions(
     df_aggregated[["GS-LABEL", "PRED-LABEL"]] = df_aggregated[["GS-LABEL", "PRED-LABEL"]].astype(int).replace(loop_config.id2label)
     return df_aggregated
     
+def retrieve_checkpoint_number(s: str)->int:
+    """"""
+    if isinstance(s, str):
+        try: 
+            output = int(s.removeprefix("checkpoint-"))
+            return output
+        except: pass 
+    return -1
+
 def retrieve_trainer_logs(directory: str) -> dict:
     """"""
     sorted_checkpoints = sorted(
         os.listdir(directory),
-        key = lambda checkpoint : int(checkpoint.removeprefix("checkpoint-"))
+        key = retrieve_checkpoint_number
     )
     last_checkpoint = sorted_checkpoints[-1]
     with open(f"{directory}/{last_checkpoint}/trainer_state.json", "r") as file:
