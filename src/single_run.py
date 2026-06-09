@@ -137,10 +137,10 @@ def single_run(
             }                
             if "ID_CHUNK" in predictions.columns:
                 run_timer["saving_predictions_aggregated"] = time()
-                predictions_on_test_aggregated.to_csv(f"./predictions_save/{hash_}-on-test-aggregated.csv")
+                predictions_on_test_aggregated.to_csv(f"./predictions_save/{hash_}-on-test-aggregated.csv", index=False)
                 (
                     aggregate_predictions(predictions, loop_config)
-                    .to_csv(f"./predictions_save/{hash_}-aggregated.csv")
+                    .to_csv(f"./predictions_save/{hash_}-aggregated.csv", index=False)
                 )
                 logs_to_save["prediction-on-test-aggregated-csv"] = f"./predictions_save/{hash_}-on-test-aggregated.csv"
                 logs_to_save["prediction-aggregated-csv"] = f"./predictions_save/{hash_}-aggregated.csv"
