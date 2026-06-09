@@ -85,7 +85,7 @@ def aggregate_predictions(
 ) -> str:
     """"""
     df = df.copy().reset_index()
-    df = df[["ID", "GS-LABEL", "PRED-LABEL"]].set_index("ID").replace(loop_config.label2id).reset_index()
+    df[["GS-LABEL", "PRED-LABEL"]] = df[["GS-LABEL", "PRED-LABEL"]].replace(loop_config.label2id)
     if isinstance(loop_config.THRESHOLD, float): 
         df_aggregated = (
             df
@@ -102,9 +102,10 @@ def aggregate_predictions(
         df_aggregated = df_aggregated >= loop_config.AT_LEAST
     else:
         raise ValueError(f"criterion not provided. Received threshold: {loop_config.THRESHOLD}; at_least: {loop_config.AT_LEAST}")
-    df_aggregated = df_aggregated.astype(int).replace(loop_config.id2label).reset_index()
-    return df_aggregated.set_index("ID")
-
+    df_aggregated = df_aggregated.reset_index()
+    df_aggregated[["GS-LABEL", "PRED-LABEL"]] = df_aggregated[["GS-LABEL", "PRED-LABEL"]].astype(int).replace(loop_config.id2label)
+    return df_aggregated
+    
 def retrieve_trainer_logs(directory: str) -> dict:
     """"""
     sorted_checkpoints = sorted(
