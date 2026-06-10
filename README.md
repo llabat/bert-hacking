@@ -16,180 +16,64 @@ A minimal, configurable pipeline for fine-tuning BERT (and other Hugging Face tr
 
 This project focuses on **simplicity, reproducibility, and fast experimentation** and is based on Hugging Face classes.
 
----
+## Protocole expérimental
 
-## 🚀 Features
+Le but est de reproduire l'expérience d'annotation et croisement annotations / métadonnées à l'aide de regressions linéaires OLS. Pour ce faire on procède en 2 étapes: 
 
-- Train any Hugging Face model (`bert`, `distilbert`, `roberta`, etc.)
-- YAML-based configuration (no code changes needed)
-- Clean preprocessing pipeline
-- Train / validation / test split
-- Built-in evaluation metrics (accuracy, precision, recall, F1)
-- Automatic experiment hashing for reproducibility
-- Batch prediction with probability scores
+- Fine-tuning de BERT-models et génération des labels sur un ensemble d'inférence
+- Regression linéaire $\text{label}\approx \text{metadonnée}$ et analyse des résultats
 
----
+### 1. Fine-tuning de BERT-models
 
-## 📂 Project Structure
+1. Choix d'un jeu de données:
+  - doit contenir au moins 2000 éléments pour l'entraînement + le nombre d'annotations utilisées pour l'inférence (cf p.9)<br/>_ex: pour un nombre d'annotation p9 de 3000, il faut que le jeux de données contienne au moins 3000 + 2000 textes annotés._
+  - doit contenir des métadonnées intéressantes
+  - le tirage des lignes utilisées pour l'inférence doit être tiré aléatoirement à partir du jeux de donnée entier, les lignes non sélectionnées peuvent être utilisées pour le fine-tuning. 
+  - Pour du multiclasse, le jeux de données doit être binarisé.
+  - <span style="background-color:orange;font-weight:bold;">Pour le moment nous avons choisi 3 jeux de données: ideology news, manifestos et misinfo</span>
+  - <span style="background-color:orange;font-weight:bold;">Pour des limites en terme de temps de calcul, nous nous autorisons à abaisser le nombre d'annotations à 3000?? 5000??</span>
+2. Choix d'hyperparamètres et entraînement
+  - Pour explorer l'espace des hyperparamètres et leur impact sur les résultats, on fait varier les hyperparamètres sur les critères suivants: `N_annotated`[^n-annotated-values] (nombre d'annotation utilisées pour l'entraînement, tous splits confondus), `splits_ratio`[^splits-ratio-values] (train: mise à jour des poids; eval: eval perf interne; test: evaluation finale), `sampling_method`[^sampling-method-values] (aléatoire, stratifié, ou forcer une distribution de positifs/negatifs), `model_name`[^model-name-values], `learning_rate`[^learning-rate-values], `weight_decay`[^weight-decay-values], `batch_size`[^bach-size-values].
+  - toute la procédure est seedée pour la reproductibilité
+  - Pour les textes dépassant la fenêtre de contexte on chunk les entrées avec des chunks de la taille de la fenêtre de contexte et un overlap de 50 tokens. **Les chunks de taille inférieure à 10% de la taille d'un chunk (typiquement la fin d'une séquence) sont ignorés**
+  - <span style="background-color:orange;font-weight:bold;">en l'état l'espace d'exploration est constitué de 11,520 combinaisons par tâche (dataset x label binarisé). Pour limiter le temps de calcul, nous procédons à un tirage aléatoire de 60 configurations par valeur de `N_annotated` et `model_name` = 60 x 4 x 4 = 960 configurations par tâches</span>
+3. Prédiction sur le jeu d'inférence et enregistrement des prédictions 
 
-    .
-    ├── config.yml          # Experiment configuration
-    ├── train.py            # Main entry point
-    ├── model.py            # Training + inference logic
-    ├── preprocess.py       # Data cleaning and formatting
-    ├── evaluate.py         # Metrics
-    ├── splits.py           # Dataset splitting
-    ├── experiment.py       # Experiment hashing
-    ├── environment.py      # Environment setup / cleanup
-    └── config.py           # Config loader
+[^n-annotated-values]: `N_annotated` values: 500, 1000, 1500, 2000
+[^splits-ratio-values]: `splits_ratio` values: [80-10-10], [70,15,15], [50,10,40]
+[^sampling-method-values]: `sampling_method` values: random, label 25%, label 50%, label 75%, label 25% strat par année, label 50% strat par année, label 75% strat par année <span style="background-color:orange;font-weight:bold;">à rediscuter</span> 
+[^model-name-values]: `model_name` values: (jeux de données anglophones) BERT-base, modernBERT deberta V2, roberta (jeux de données multilingues) MBERT, xlm-robeta, multilingual E5, MMBERT
+[^learning-rate-values]: `learning_rate` values: 5e-4, 1e-4, 1e-5, 2e-5, 5e-5 
+[^weight-decay-values]: `weight_decay` values: 0, 0.01, 0.03, 0.1
+[^bach-size-values]: `batch_size` values: 8, 16, 32
 
----
+### Regressions
 
-## ⚙️ Installation
-
-    pip install -r requirements.txt
-
-Or manually:
-
-    pip install torch transformers datasets pandas scikit-learn pyyaml
-
----
-
-## 🧪 Usage
-
-### 1. Prepare your dataset
-
-CSV format example:
-
-    id,text,label
-    1,"This is great!",1
-    2,"Terrible experience",0
-
----
-
-### 2. Configure your experiment
-
-Edit `config.yml`:
-
-    data:
-      input_path: data/train.csv
-      text_column: text
-      label_column: label
-      id_column: id
-
-    split:
-      train_size: 0.8
-      validation_size: 0.1
-      test_size: 0.1
-      stratify: true
-
-    model:
-      model_name: distilbert-base-uncased
-      num_labels: 2
-
-    training:
-      output_dir: outputs/run_001
-      learning_rate: 2e-5
-      per_device_train_batch_size: 8
-      num_train_epochs: 3
-
----
-
-### 3. Run training
-
-    python train.py --config config.yml
-
-(or just `python train.py` if using default config path)
-
----
-
-## 📊 Output
-
-After training, you’ll get:
-
-- 📁 Model checkpoints → `output_dir`
-- 📄 Test predictions →  
-  `test_predictions_<run_hash>.csv`
-
-Example output:
-
-    id,prediction,scores,true_label
-    1,1,"[0.1, 0.9]",1
-
----
-
-## How it works
-
-### Pipeline
-
-1. Load dataset from CSV  
-2. Sanitize columns → `TEXT`, `LABEL`, `ID`  
-3. Split into train / validation / test  
-4. Tokenize using Hugging Face tokenizer  
-5. Train using `Trainer`  
-6. Evaluate with standard metrics  
-7. Generate predictions  
-
----
-
-## Configuration Explained
-
-### `data`
-- Defines dataset location and column names
-
-### `split`
-- Controls dataset splitting and reproducibility
-
-### `model`
-- Hugging Face model + number of classes
-
-### `training`
-- Hyperparameters passed to `TrainingArguments`
-
----
-
-## Reproducibility
-
-Each run generates a unique hash based on:
-
-- model  
-- split ratios  
-- learning rate  
-- batch size  
-- epochs  
-- seed  
-
-This ensures experiments are easy to track and compare.
-
----
-
-## Customization
-
-You can:
-
-- Swap models:
-  
-      model_name: roberta-base
-
-- Change task type:
-  - binary classification
-  - multiclass classification
-
-- Adjust training:
-  
-      learning_rate: 3e-5
-      num_train_epochs: 5
-
----
-
-## ⚠️ Limitations
-
-This project is intentionally minimal. It does **not** include:
-
-- hyperparameter tuning  
-- experiment tracking (e.g. WandB)  
-- distributed training  
-- advanced callbacks  
-- custom architectures  
-
----
+- Regression d'une métadonnée du jeux origine (binarisée) sur les labels (prédits / gold). (ex: `sm.Logit(y = df["label-centre], X = df["topic-economy"]) 
+- Sauvegarde des données de regression:
+  - `Pseudo R-squared`
+  - `Coef`
+  - `Std err`
+  - `pvalues`
+  - `Conf Int`
+  - `Log-Likelihood`
+  - `LL-Null`
+  - `LLR p-value`
+  - `AIC`
+  - `BIC`
+  - `N iterations`
+- Analyse des résultats:
+  - Filtrer les regressions qui n'ont pas fonctionné (`res_success = res.loc['FAILED' != res['Coef']]`)
+  - Créer des paires de regressions
+    - grouper par task (dataset x label)
+    - grouper par hypotèse (covariate explique label)
+    - grouper par configuration (modele, learning rate etc..)
+    - Chaque groupe devrait contenir 2 regressions, une où le label est gold-standard et un ou le label est prédit
+  - Ne conserver que les regressions faisant partie d'un couple `valid_for_comparison = res_success.groupby([ ... ]).size() == 2`
+  - Pour chaque groupe de regression évaluer la présence d'erreur
+    - `error_type_1 : bool = pred_significant and not GS_significant`
+    - `error_type_2 : bool = GS_significant and not pred_significant`
+    - `error_type_S : bool = pred_significant and GS_significant and (GS_coef * pred_coef < 0)`
+    - `error_type_M : float = pred_significant and GS_significant and (GS_coef * pred_coef < 0) * magnitude_coef`
+    - _voir `analyse-regression-results.py` pour les détails_
+  - Évaluer les risques d'après la définition du papier
