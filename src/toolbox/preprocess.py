@@ -1,18 +1,19 @@
 import os 
+import json 
 
 from datasets import Dataset, DatasetDict
 import numpy as np
 import pandas as pd 
 from transformers import AutoConfig
+from tqdm import tqdm
 
-from . import LoopConfig
+from . import LoopConfig, load_tokenizer
 
 def sanitize_df(
     df: pd.DataFrame, 
     text_col: str, 
     label_col:str, 
     id_col:str, 
-    id_chunk_col: str|None = None, 
     extra_cols_to_keep : list[str]|None=None, 
     **kwargs
 )->pd.DataFrame:
@@ -30,10 +31,6 @@ def sanitize_df(
     })
     main_columns = ["TEXT","LABEL", "ID"]
     column_for_index = "ID"
-    if id_chunk_col: 
-        df = df.rename(columns={id_chunk_col: "ID_CHUNK"})
-        main_columns += ["ID_CHUNK"]
-        column_for_index = "ID_CHUNK"
     if extra_cols_to_keep: 
         main_columns += extra_cols_to_keep
 
@@ -44,6 +41,8 @@ def sanitize_df(
             f"\t TEXT: {df['TEXT'].isna().sum()}"
             f"\t LABEL: {df['LABEL'].isna().sum()}"
         )
+    # Force ID to be strings
+    df["ID"] = df["ID"].astype(str)
     if df[column_for_index].is_unique:
         return df[main_columns]
     else:
@@ -63,51 +62,48 @@ def dichotomize(df: pd.DataFrame, loop_config: LoopConfig) -> tuple[pd.DataFrame
     id2label = {1:label, 0: f"not-{label}"}
     return df, label2id, id2label
 
-def get_max_tokens(texts: pd.Series, tokenizer, top_n : int = 15)->int:
-    """
-    Tokenize the top_n longest entries (in term of characters), tokenize them and 
-    return the maximum length of the encoded sentences
-    """
-    longests_as_index = texts.apply(len).sort_values(ascending=False).head(top_n).index
-    max_tokenizing_len = (
-        texts[longests_as_index]
-        .apply(lambda txt: tokenizer(txt)["input_ids"])
-        .apply(len)
-        .max()
-    )
-    return max_tokenizing_len
+def get_max_tokens(N_documents:dict[str:dict])->int:
+    """"""
+    return max([d["N_tokens"] for d in N_documents.values()])
 
 def cap_max_length(max_n_tokens : int, loop_config: LoopConfig) -> int:
     model_max = AutoConfig.from_pretrained(loop_config.model_name).max_position_embeddings - 1
     return int(min(max_n_tokens, model_max))
 
-def _sample_N_elements(df: pd.DataFrame, label2id : dict, loop_config: LoopConfig)->pd.DataFrame:
+def _sample_N_documents_by_their_ID(df: pd.DataFrame, loop_config: LoopConfig)->list:
     """
-    Sample N elements
+    Sample N elements, return the sampled IDs
+    At this stage the texts are not chunked, therefore one row = one ID 
     """
+    if not df["ID"].is_unique:
+        raise ValueError(f"Can't sample if IDs are not unique\nfrom: _sample_N_documents_by_their_ID")
+
     stratification_col = loop_config.sampling_method["stratified"]
     balance = loop_config.sampling_method["balance"]
-    df = df.copy()
+    df_for_ID_sampling = df.copy()
     if stratification_col is None:
         # Create dummy stratification column
-        df["stratification_col"] = 0
+        df_for_ID_sampling["stratification_col"] = 0
         stratification_col = "stratification_col"
 
-    df_for_ID_sampling = df.groupby("ID").sample(1).set_index("ID")
-    df_for_ID_sampling["LABEL"] = df_for_ID_sampling["LABEL"].map(label2id)
+    # Switch from LABEL/not-LABEL to 1/0 for easier distribution calculation
+    df_for_ID_sampling["LABEL"] = df_for_ID_sampling["LABEL"].map(loop_config.label2id)
+    rng = np.random.default_rng(seed=loop_config.seed)
     N_per_strata = int(loop_config.N_annotated / 
                        df_for_ID_sampling[stratification_col].nunique())
 
     id_samples = []
-    for _, subdf in df_for_ID_sampling.groupby(stratification_col):
+    for _, strata_df in df_for_ID_sampling.groupby(stratification_col):
         batch_indexes = []
+        available_rows = strata_df.copy().set_index("ID")
+        available_rows_indexes = list(available_rows.index)
         for _ in range(N_per_strata):
-            local_distrib = subdf.drop(index=batch_indexes)["LABEL"].mean()
+            local_distrib = available_rows["LABEL"].mean()
             if balance == "random":
                 local_weights = None
             else: 
                 local_weights = (
-                    subdf.drop(index=batch_indexes)
+                    available_rows
                     ["LABEL"]
                     .map({
                         1: balance / local_distrib, 
@@ -115,34 +111,35 @@ def _sample_N_elements(df: pd.DataFrame, label2id : dict, loop_config: LoopConfi
                     })
                 )
                 local_weights = local_weights / sum(local_weights)
-            batch_indexes += [np.random.choice(
-                list(subdf.drop(index=batch_indexes).index), 
-                p = local_weights
-            )]
+            choice = str(rng.choice(available_rows_indexes, p = local_weights))
+            # Update for next pick
+            batch_indexes += [choice]
+            available_rows = available_rows.drop(index=[choice])
+            available_rows_indexes.remove(choice)
         id_samples += batch_indexes
-    return df.loc[np.isin(df["ID"], id_samples)]
+    return id_samples
 
-def sample_N_elements(df: pd.DataFrame, label2id : dict, loop_config: LoopConfig)->tuple[pd.DataFrame, dict]:
+def sample_N_documents(df: pd.DataFrame, loop_config: LoopConfig)->tuple[pd.DataFrame, dict]:
     """
     Sample N elements with cache 
     """
     stratification_col = loop_config.sampling_method["stratified"]
     balance = loop_config.sampling_method["balance"]
-    cache_file = (f"{loop_config.task_name}-{loop_config.N_annotated}-"
-        f"{stratification_col}-{balance}.csv")
+    cache_file = (f"{loop_config.dataset_name}-{loop_config.dichotomization_label}-"
+        f"{loop_config.N_annotated}-{stratification_col}-{balance}-{loop_config.seed}.csv")
+    
     if cache_file in os.listdir("./.cache"):
-        out_df = pd.read_csv(f"./.cache/{cache_file}")
+        id_samples = pd.read_csv(f"./.cache/{cache_file}")["id_samples"].tolist()
     else: 
-        print("Start sampling, might take a while") #TODELETE
-        out_df = _sample_N_elements(df, label2id, loop_config)
-        print("Done sampling") #TODELETE
-        out_df.to_csv(f"./.cache/{cache_file}", index=False)
-    df_for_effective_distrib_calc = out_df.groupby("ID").sample(n=1,random_state=0)
-    label, count = np.unique_counts(df_for_effective_distrib_calc['LABEL'])
+        id_samples = _sample_N_documents_by_their_ID(df, loop_config)
+        pd.Series(id_samples, name="id_samples").to_csv(f"./.cache/{cache_file}", index=False)
+
+    out_df = df.loc[np.isin(df["ID"], id_samples)]
+    label, count = np.unique_counts(out_df['LABEL'])
     effective_distrib = {l:float(c / sum(count)) for l,c in zip(label, count)}
     return out_df, effective_distrib
 
-def split_ds(df : pd.DataFrame, loop_config: LoopConfig)-> DatasetDict:
+def split_ds(N_documents: dict[str:dict], loop_config: LoopConfig)-> DatasetDict:
     """
     takes the splits_ratio (ex: [80, 10, 10]) and return a DatasetDict
     """
@@ -157,30 +154,136 @@ def split_ds(df : pd.DataFrame, loop_config: LoopConfig)-> DatasetDict:
             f"The sum of splits_ratio shoul be 100. Found: "
             f"{splits_ratio}"
         )
-    ids = pd.Series(df["ID"].unique()).sample(frac=1, random_state=loop_config.seed)
-    N_ids = len(ids)
-    ids_train = ids.head(splits_ratio[0] * N_ids // 100)
-    ids_test = ids.tail(splits_ratio[2] * N_ids // 100)
-    ids_train_eval = ids.drop(index=[*ids_train.index.to_list(), *ids_test.index.to_list()])
+    unique_IDs = (
+        pd.Series(list(set([d["ID"] for d in N_documents.values()]))) # Unique
+        .sample(frac=1, random_state=loop_config.seed) # Shuffle
+    )
+    N_ids = len(unique_IDs)
+    ids_train = unique_IDs.head(splits_ratio[0] * N_ids // 100)
+    ids_test = unique_IDs.tail(splits_ratio[2] * N_ids // 100)
+    ids_eval = unique_IDs.drop(index=[*ids_train.index.to_list(), *ids_test.index.to_list()])
 
     out_dsd = DatasetDict({
-        "train": Dataset.from_pandas(df.loc[np.isin(df["ID"], ids_train)]),
-        "train-eval": Dataset.from_pandas(df.loc[np.isin(df["ID"], ids_train_eval)]),
-        "test": Dataset.from_pandas(df.loc[np.isin(df["ID"], ids_test)]),
+        "train": Dataset.from_list([d for d in N_documents.values() if d["ID"] in ids_train.values]),
+        "eval": Dataset.from_list([d for d in N_documents.values() if d["ID"] in ids_eval.values]),
+        "test": Dataset.from_list([d for d in N_documents.values() if d["ID"] in ids_test.values]),
     })
-    return out_dsd
 
-def tokenize_dataset_dict(
-        row: dict, 
-        label2id: dict[str:int], 
-        tokenizer,  
-        tokenization_parameters: dict
-    ) -> dict:
+    columns_to_keep = ["ID", "TEXT", "LABEL", "input_ids", "attention_mask", "labels"]
+    if "ID_CHUNK" in N_documents.popitem()[1]: 
+        columns_to_keep += ["ID_CHUNK"]
+    return out_dsd.select_columns(columns_to_keep)
+
+def get_tokenized_texts(
+    texts : pd.DataFrame, 
+    df_name: str, 
+    tokenizer,
+    loop_config: LoopConfig
+) -> dict[str:dict]:
     """"""
-    row = row.copy()
-    tokenized_entry = tokenizer(row["TEXT"], **tokenization_parameters)
-    return {
-        **row,
-        **tokenized_entry,
-        "labels": label2id[row["LABEL"]]
-    }
+    cache_file = (f"full-tokenized-{df_name}-{loop_config.dataset_name}-"
+        f"{loop_config.model_name.replace('/','-')}.json")
+    
+    if cache_file in os.listdir("./.cache"):
+        with open(f"./.cache/{cache_file}", "r") as file:
+            output = json.load(file)
+    else:
+        output = {}
+        for batch in tqdm(Dataset.from_pandas(texts).batch(32), desc="Tokenizing texts"):
+            tokenized_entry = tokenizer(batch["TEXT"]) # (32, ???) Not padded
+            output.update({
+                id: {
+                    key: tokenized_entry[key][i]
+                    for key in tokenized_entry
+                }
+                for i, id in enumerate(batch["ID"])
+            })
+        with open(f"./.cache/{cache_file}", "w") as file:
+            json.dump(output, file, ensure_ascii=True)
+    return output
+
+def join_tokenized_texts(N_documents: dict[str:dict], tokenized_texts:dict[str:dict])->dict:
+    N_documents = N_documents.copy()
+    for id in N_documents:
+        N_documents[id].update({
+            **tokenized_texts[id], 
+            "ID": id,
+            "N_tokens": len(tokenized_texts[id]["input_ids"])
+        })
+    return N_documents
+
+def chunk_texts(N_documents: dict[str:dict], chunk_length: int, overlap: int) -> DatasetDict:
+    """"""
+    effective_chunk_length = chunk_length - 2 # to account for "CLS" and "SEP"
+    output = {}
+    for id_doc, row in N_documents.items():
+        if row["N_tokens"] > chunk_length:
+            index_max = row["N_tokens"] - 2 # length - 1, -1 to not sample SEP twice
+            s, e, i_chunk = 1, effective_chunk_length + 1, 0 # Start at 1 not to  sample CLS twice
+            while s < index_max:
+                # skip chunks that are too small
+                if min(e, index_max) - s < 0.1 * chunk_length: break
+
+                output[f"{id_doc}-{i_chunk}"] = {
+                    **{k:v for k,v in row.items() if k not in ["input_ids", "attention_mask"]}, 
+                    "input_ids": [
+                        row["input_ids"][0], 
+                        *row["input_ids"][s:min(e, index_max)], 
+                        row["input_ids"][-1]
+                    ], 
+                    "attention_mask": [
+                        row["attention_mask"][0], 
+                        *row["attention_mask"][s:min(e, index_max)], 
+                        row["attention_mask"][-1]
+                    ],
+                    "ID" : id_doc,
+                    "ID_CHUNK" : f"{id_doc}-{i_chunk}"
+                }
+                s += effective_chunk_length - overlap
+                e += effective_chunk_length - overlap
+                i_chunk += 1
+        else: 
+            output[f"{id_doc}-0"] = {
+                **row, 
+                "ID": id_doc,
+                "ID_CHUNK": f"{id_doc}-0"
+            }
+    return output
+
+def pad_texts(N_documents: dict[str:dict], chunk_length: int, pad_token_id:int)-> dict[str:dict]:
+    """"""
+    for id_doc in tqdm(N_documents, desc="Padding texts"):
+        _n_tok = len(N_documents[id_doc]["input_ids"])
+        N_documents[id_doc]["input_ids"] += [pad_token_id] * (chunk_length - _n_tok)
+        N_documents[id_doc]["attention_mask"] += [0] * (chunk_length - _n_tok)
+    return N_documents
+
+def format_labels(N_documents: dict[str:dict], loop_config: LoopConfig) -> dict[str:dict]:
+    """"""
+    for id_doc in N_documents:
+        N_documents[id_doc]["labels"] = loop_config.label2id[N_documents[id_doc]["LABEL"]]
+    return N_documents
+
+def tokenize_chunk_pad(
+    df_full : pd.DataFrame, 
+    df_sample: pd.DataFrame, 
+    df_name: str, 
+    loop_config: LoopConfig, 
+) -> tuple[DatasetDict, int]:
+    """"""
+    tokenizer = load_tokenizer(loop_config)
+    tokenized_texts = get_tokenized_texts(df_full[["ID", "TEXT"]], df_name, tokenizer, loop_config) # TODO: implement partial json loader
+    
+    # swith to dict[ID:row] format for easier and faster formatting
+    N_documents = df_sample.set_index("ID").T.to_dict()
+    N_documents = join_tokenized_texts(N_documents, tokenized_texts)
+    N_documents = format_labels(N_documents, loop_config)
+    
+    max_n_tokens = get_max_tokens(N_documents)
+    max_length_capped = cap_max_length(max_n_tokens, loop_config)
+    
+    if max_n_tokens > max_length_capped: 
+        N_documents = chunk_texts(N_documents, max_length_capped, loop_config.OVERLAP)
+    N_documents = pad_texts(N_documents,max_length_capped,tokenizer.pad_token_id)
+
+    return N_documents, max_length_capped

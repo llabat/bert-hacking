@@ -8,3 +8,6 @@ predictions_save/
 **/__*
 *.html
 .cache
+.env
+# Don't save updates of the results
+results/

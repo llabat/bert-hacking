@@ -39,7 +39,7 @@ class LoopConfig:
     }
 
     VARIABLES_TO_CHECK_FOR_EQUALITY = [
-        "task_name", 
+        "dataset_name", 
         "dichotomization_label", 
 
         "N_annotated", 
@@ -50,7 +50,8 @@ class LoopConfig:
         "n_epochs",
         "learning_rate", 
         "weight_decay", 
-        "batch_size"
+        "batch_size", 
+        "seed"
     ]
 
     def __extract_value(self, param_name:str, **kwargs):
@@ -94,12 +95,12 @@ class LoopConfig:
                 f"{self.VARIABLES_TYPE[param_name]} but received {kwargs.get(param_name, None)}"))
 
 
-    def __init__(self, task_name : str, dichotomization_label : str, **kwargs) -> None:
+    def __init__(self, dataset_name : str, dichotomization_label : str, **kwargs) -> None:
         """
         Takes in any kwargs and return a dictionnary with the expected keys, default 
         values and format
         """
-        self.task_name = str(task_name)
+        self.dataset_name = str(dataset_name)
         self.dichotomization_label = str(dichotomization_label)
 
         self.N_annotated = self.__extract_value("N_annotated", **kwargs)
@@ -117,6 +118,21 @@ class LoopConfig:
         self.device_batch_size = self.__extract_value("device_batch_size", **kwargs)
         self.device_batch_size_for_prediction = self.__extract_value("device_batch_size_for_prediction", **kwargs)
         self.test_mode = self.__extract_value("test_mode", **kwargs)
+
+        # Ensure device_batch_size <= batch_size 
+        self.device_batch_size = min(self.batch_size, self.device_batch_size)
+
+        self.label2id, self.id2label = None, None
+        self.OVERLAP, self.AT_LEAST, self.THRESHOLD = None, None, None
+
+    def set_fixed_parameters(self, OVERLAP: int, AT_LEAST: int|None, THRESHOLD:int|None)->None:
+        self.OVERLAP = OVERLAP 
+        self.AT_LEAST = AT_LEAST
+        self.THRESHOLD = THRESHOLD
+
+    def set_label_id_mapper(self, label2id: dict, id2label: dict) -> None:
+        self.label2id = label2id
+        self.id2label = id2label
 
     def to_dict(self) -> dict:
         return {key : self.__getattribute__(key) for key in self.VARIABLES_TO_CHECK_FOR_EQUALITY}

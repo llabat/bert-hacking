@@ -5,7 +5,7 @@ from pandas import Timestamp
 from . import LoopConfig
 # SCRIPTS ######################################################################
 class CustomLogger:
-    def __init__(self, foldername : str = None):
+    def __init__(self, foldername : str = "./custom_logs"):
         self.name = ""
         self.foldername = foldername
 
@@ -29,5 +29,5 @@ class CustomLogger:
     
     def start_loop_log(self, loop_config: LoopConfig) -> None :
             self.__call__("START LOOP" + "#" * 91, skip_line="before")
-            self.__call__(f"Starting Loop on task {loop_config.task_name} {'(TEST_MODE)' if loop_config.test_mode else ''} and config {loop_config.to_dict()}")
+            self.__call__(f"Starting Loop on task {loop_config.dataset_name} {'(TEST_MODE)' if loop_config.test_mode else ''} and config {loop_config.to_dict()}")
             self.__call__(f"Using BATCH_SIZE: {loop_config.device_batch_size} - TOTAL_BATCH_SIZE: {loop_config.batch_size} - SEED: {loop_config.seed}")

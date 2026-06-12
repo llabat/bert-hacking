@@ -1,25 +1,26 @@
 import os 
+import shutil
 
 from datasets import DatasetDict, Dataset
 import numpy as np
 import pandas as pd 
 from sklearn.metrics import f1_score
-from torch import Tensor
+from torch import Tensor, no_grad
 from transformers import TrainingArguments, Trainer, EvalPrediction
 from tqdm import tqdm
 
 from . import LoopConfig
-from .utils import get_device, clean
+from .utils import get_device, clean, retrieve_trainer_logs
 
 def load_training_arguments(loop_config: LoopConfig) -> TrainingArguments:
     device = get_device()
 
     # Overwrite output dir
     if os.path.isdir(loop_config.output_dir):
-        os.system(f'rm -rf {loop_config.output_dir}')
+        shutil.rmtree(loop_config.output_dir)
 
     return TrainingArguments(
-        bf16= str(device) == True, # Faster training
+        bf16= str(device) == "cuda", # Faster training
         # Hyperparameters
         num_train_epochs = loop_config.n_epochs,
         learning_rate = loop_config.learning_rate,
@@ -38,7 +39,7 @@ def load_training_arguments(loop_config: LoopConfig) -> TrainingArguments:
         load_best_model_at_end = True,
         save_total_limit =  2,
         disable_tqdm = False, 
-        dataloader_pin_memory = str(device) != "cuda",
+        dataloader_pin_memory = str(device) == "cpu",
         # SEED
         seed = loop_config.seed
     )
@@ -61,10 +62,10 @@ def train_model(
     training_args : TrainingArguments,
     dsd : DatasetDict,
     loop_config: LoopConfig,
-) -> str :
+) -> tuple[str, dict] :
     """
     """
-    output = None
+    output, trainer_logs = None, None
     try: 
         device = get_device()
         for split in dsd:
@@ -77,20 +78,21 @@ def train_model(
             model, 
             args = training_args,
             train_dataset=dsd["train"],
-            eval_dataset=dsd["train-eval"], 
+            eval_dataset=dsd["eval"], 
             compute_metrics = compute_metrics_multiclass,
         )
         print(f"Begin training on {device}")
         trainer.train()
         output = trainer.state.best_model_checkpoint
+        trainer_logs = retrieve_trainer_logs(training_args.output_dir)
     except Exception as e:
         print(f"ERROR in train_model: \n{e}")
     finally:
         del trainer
         clean()
-    return output
+    return output, trainer_logs
 
-def predict(model, ds : Dataset, loop_config: LoopConfig, id2label: dict[int:str])->pd.DataFrame:
+def predict(model, ds : Dataset, loop_config: LoopConfig)->pd.DataFrame:
     if "input_ids" not in ds.features:
         raise ValueError("Please tokenize texts first")
     if "attention_mask" not in ds.features:
@@ -106,40 +108,35 @@ def predict(model, ds : Dataset, loop_config: LoopConfig, id2label: dict[int:str
     ds = ds.with_format("torch", device=device)
     model = model.to(device=device)
     model.eval()
+    if str(device)=="cuda": model = model.bfloat16()
 
-    output_df = []
+    ID_= []
+    ID_chunk_ = []
+    GS_ = []
+    PRED_ = []
     for batch in tqdm(ds.batch(loop_config.device_batch_size_for_prediction), desc="Prediction"):
-        probs = (
-            model(input_ids = batch["input_ids"], attention_mask= batch["attention_mask"])
-            .logits
-            .detach().cpu()
-            .softmax(1)
-            .numpy()
-        )
+        with no_grad():
+            probs = (
+                model(input_ids = batch["input_ids"], attention_mask= batch["attention_mask"])
+                .logits.cpu().softmax(1).float().numpy()
+            )
         y_pred = np.argmax(probs, axis = 1).reshape(-1)
         
+        ID_ += batch["ID"]
+        GS_ += batch["LABEL"]
+        PRED_ += [loop_config.id2label[int(y)] for y in y_pred]
         if "ID_CHUNK" in batch:
-            output_df += [
-                {
-                    "ID": id,
-                    "ID_CHUNK": id_chunk,
-                    "GS-LABEL": label,
-                    "PRED-LABEL": id2label[int(pred)],
-                }
-                for id, id_chunk, label, pred in zip(
-                    batch["ID"], 
-                    batch["ID_CHUNK"], 
-                    batch["LABEL"], 
-                    y_pred
-                )
-            ]
-        else:
-            output_df += [
-                {
-                    "ID": id,
-                    "GS-LABEL": label,
-                    "PRED-LABEL": id2label[int(pred)],
-                }
-                for id, label, pred in zip(batch["ID"], batch["LABEL"], y_pred)
-            ]
-    return pd.DataFrame(output_df).set_index("ID")
+            ID_chunk_ += batch["ID"]
+    if len(ID_chunk_)>0:
+        return pd.DataFrame({
+            "ID": ID_, 
+            "ID_CHUNK":ID_chunk_, 
+            "GS-LABEL":GS_, 
+            "PRED-LABEL":PRED_
+        }).set_index("ID")
+    
+    return pd.DataFrame({
+        "ID": ID_, 
+        "GS-LABEL": GS_, 
+        "PRED-LABEL": PRED_
+    }).set_index("ID")

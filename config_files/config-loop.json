@@ -1,17 +1,16 @@
 {
     "datasets":[
         {
-            "filepath-train": "./data/ideology_news-dataset_for_training_400_50.csv",
-            "name": "ideology_news-chunked-400-50",
+            "filepath-train": "./data/ideology_news-dataset_for_training.csv",
+            "name": "ideology_news",
             "text_col": "content",
             "label_col": "bias_text",
             "id_col": "ID",
-            "id_chunk_col": "ID-chunk",
-            "filepath-predict": "./data/ideology_news-dataset_for_inference_400_50.csv",
+            "filepath-predict": "./data/ideology_news-dataset_for_inference.csv",
             "extra_cols_to_keep" : ["year"]
         }
     ],
-    "data-hyperparameters":{
+    "parameters":{
         "N_annotated": [
             500, 
             1000, 
@@ -32,14 +31,9 @@
             {"balance":0.25    , "stratified": "year"},
             {"balance":0.50    , "stratified": "year"},
             {"balance":0.75    , "stratified": "year"}
-        ]
-    },
-    "model-hyperparameters":{
+        ],
         "model_name": [
-            "google-bert/bert-base-uncased",
-            "answerdotai/ModernBERT-base",
-            "microsoft/deberta-v2-xlarge",
-            "FacebookAI/roberta-base"
+            "google-bert/bert-base-uncased"
         ],
         "learning_rate":[
             5e-4,
@@ -50,10 +44,11 @@
         ],
         "weight_decay":[
             0.0,
-            0.001,
             0.01,
-            0.05
+            0.03,
+            0.1
         ], 
-        "batch_size":[8, 16, 32]
+        "batch_size":[8, 16, 32], 
+        "seed" : [42]
     }
 }

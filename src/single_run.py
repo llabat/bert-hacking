@@ -13,20 +13,18 @@ from toolbox import (
     LoopConfig,
     create_hash,
     dichotomize,
-    load_tokenizer,
-    get_max_tokens, 
-    sample_N_elements,
+    sample_N_documents,
+    tokenize_chunk_pad,
     split_ds,
-    tokenize_dataset_dict,
     load_training_arguments,
     train_model,
     predict,
     clean, 
     sanitize_df,
-    cap_max_length,
-    aggregate_predictions
+    aggregate_predictions, 
 )
 
+OVERLAP = 50
 AT_LEAST = 1
 THRESHOLD = None
 
@@ -50,35 +48,36 @@ def single_run(
     """
 
     logger = CustomLogger("./custom_logs")
+    loop_config.set_fixed_parameters(OVERLAP, AT_LEAST, THRESHOLD)
     run_timer = {}
 
     # Use time as hash
     hash_, logs_to_save = create_hash(loop_config), None
-    tokenizer, ds_loop, dsd_loop, ds_pred, predictions, model = (None,) * 6
+    logger(hash_)
+    dichotomized_df, dichotomized_df_prediction, dsd_loop, model, ds_pred = (None,)*5
     try: 
         # Dichotomization: dichotomization_label
         run_timer["preprocess_data"] = time()
         dichotomized_df, label2id, id2label = dichotomize(df, loop_config)
+        loop_config.set_label_id_mapper(label2id, id2label)
         dichotomized_df_prediction, _, _ = dichotomize(df_prediction, loop_config)
         
-        # Prepare tokenizer: model_name
-        tokenizer = load_tokenizer(loop_config)
-
-        max_n_tokens = get_max_tokens(dichotomized_df["TEXT"], tokenizer)
-        max_length_capped = cap_max_length(max_n_tokens, loop_config)
-        tokenization_parameters = {
-            'padding' : 'max_length',
-            'truncation' : True,
-            'max_length' : max_length_capped 
-        }
-
         # Prepare dataset: N_annotated, splits_ratio, seed
-        ds_loop, effective_distrib = sample_N_elements(dichotomized_df, label2id, loop_config)
-        logger(f"Sample {ds_loop['ID'].nunique()} documents; corresponds to {len(ds_loop)} rows")
+        # N_documents is a dictionary of dictionaries
+        df_sample, effective_distrib = sample_N_documents(dichotomized_df, loop_config)
+        logger(f"Sample {len(df_sample)} rows")
         logger(f"Effective distribution: {effective_distrib} — requested : {loop_config.sampling_method}")
-        dsd_loop : DatasetDict = split_ds(ds_loop, loop_config)
-        dsd_loop = dsd_loop.map(lambda row: tokenize_dataset_dict(row,label2id, tokenizer,tokenization_parameters))
-        
+        # Prepare tokenize texts: model_name
+        N_documents, max_length_capped = tokenize_chunk_pad(
+            df_full = dichotomized_df, 
+            df_sample = df_sample, 
+            df_name = "training", 
+            loop_config = loop_config
+        )
+        dsd_loop = split_ds(N_documents, loop_config)
+        del df_sample, N_documents
+        logger(dsd_loop)
+
         run_timer["preprocess_data"] = time() - run_timer["preprocess_data"] 
         
         # Prepare model: model_name
@@ -97,18 +96,18 @@ def single_run(
 
         # Launch training: test_mode
         tstart = time()
-        best_model_checkpoint = train_model(model, training_args,dsd_loop,loop_config)
+        best_model_checkpoint, trainer_logs = train_model(model, training_args,dsd_loop,loop_config)
         logger(f"Training done in {time() - tstart:.0f}s - best model checkpoint: {best_model_checkpoint}")
         run_timer["training"] = time() - run_timer["training"] 
         
         # Reload model from checkpoint: test_mode, device_batch_size
         run_timer["evaluation"] = time()
         model = AutoModelForSequenceClassification.from_pretrained(best_model_checkpoint)
-        predictions : pd.DataFrame = predict(model, dsd_loop["test"], loop_config, id2label=id2label)
-        predictions_aggregated : pd.DataFrame = aggregate_predictions(predictions, label2id, id2label, THRESHOLD, AT_LEAST)
+        predictions_on_test : pd.DataFrame = predict(model, dsd_loop["test"], loop_config)
+        predictions_on_test_aggregated : pd.DataFrame = aggregate_predictions(predictions_on_test, loop_config)
         score_on_test = f1_score(
-            y_true = predictions_aggregated["GS-LABEL"], 
-            y_pred = predictions_aggregated["PRED-LABEL"], 
+            y_true = predictions_on_test_aggregated["GS-LABEL"], 
+            y_pred = predictions_on_test_aggregated["PRED-LABEL"], 
             average="macro",
             zero_division=np.nan
         )
@@ -117,33 +116,45 @@ def single_run(
 
         # Predict on full data
         run_timer["prediction"] = time() 
-        ds_pred = Dataset.from_pandas(dichotomized_df_prediction)
-        ds_pred = ds_pred.map(lambda row: tokenize_dataset_dict(row,label2id, tokenizer,tokenization_parameters))
-
+        N_documents, max_length_capped_inference = tokenize_chunk_pad(
+            df_full = dichotomized_df_prediction,
+            df_sample = dichotomized_df_prediction, 
+            df_name = "inference", 
+            loop_config = loop_config
+        )
+        ds_pred = Dataset.from_list([d for d in N_documents.values()])
+        del N_documents
         logger("Start Inference")
         tstart = time()
-        predictions : pd.DataFrame = predict(model, ds_pred, loop_config, id2label=id2label)
+        predictions : pd.DataFrame = predict(model, ds_pred, loop_config)
         logger(f"Inference done in {time() - tstart:.0f} s")
         run_timer["prediction"] = time() - run_timer["prediction"]
 
         if not loop_config.test_mode:
             run_timer["saving_predictions"] = time()
+            predictions_on_test.to_csv(f"./predictions_save/{hash_}-on-test.csv")
             predictions.to_csv(f"./predictions_save/{hash_}.csv")
             run_timer["saving_predictions"] = time() - run_timer["saving_predictions"]
             logs_to_save = {
                 **loop_config.to_dict(),
-                "effective_context_window": max_length_capped,
+                "effective_context_window_for_training": max_length_capped,
+                "effective_context_window_for_inference": max_length_capped_inference,
                 "score_on_test": score_on_test,
+                "prediction-on-test-csv": f"./predictions_save/{hash_}-on-test.csv",
                 "prediction-csv": f"./predictions_save/{hash_}.csv",
                 "effective_distrib": effective_distrib,
+                "trainer-logs": trainer_logs,
             }                
             if "ID_CHUNK" in predictions.columns:
                 run_timer["saving_predictions_aggregated"] = time()
+                predictions_on_test_aggregated.to_csv(f"./predictions_save/{hash_}-on-test-aggregated.csv", index=False)
                 (
-                    aggregate_predictions(predictions, label2id, id2label, THRESHOLD, AT_LEAST)
-                    .to_csv(f"./predictions_save/{hash_}-aggregated.csv")
+                    aggregate_predictions(predictions, loop_config)
+                    .to_csv(f"./predictions_save/{hash_}-aggregated.csv", index=False)
                 )
+                logs_to_save["prediction-on-test-aggregated-csv"] = f"./predictions_save/{hash_}-on-test-aggregated.csv"
                 logs_to_save["prediction-aggregated-csv"] = f"./predictions_save/{hash_}-aggregated.csv"
+                logs_to_save["aggregation-strategy"] = {"at_least": loop_config.AT_LEAST, "threshold":loop_config.THRESHOLD}
                 run_timer["saving_predictions_aggregated"] = time() - run_timer["saving_predictions_aggregated"] 
             logs_to_save["run_timer"] = run_timer
             logger(f"Information saved with hash {hash_}")
@@ -152,7 +163,7 @@ def single_run(
         logger("Loop failed")
         logger(f"Error during loop {hash_}\n{loop_config}\n{e}\n\n", type="ERRORS")
     finally: 
-            del tokenizer, ds_loop, dsd_loop, ds_pred, predictions, model
+            del dichotomized_df, dichotomized_df_prediction, dsd_loop, model, ds_pred
             clean() 
 
     return hash_, logs_to_save
@@ -163,6 +174,6 @@ if __name__=="__main__":
     df = pd.read_csv("./data/ideology_news-stratified_year_balanced.csv")
     df = sanitize_df(df, text_col = "content", label_col = "bias_text", id_col="ID")
     df_prediction = df.copy()
-    loop_config = LoopConfig(task_name = "TASK-left", dichotomization_label="left", test_mode=True)
+    loop_config = LoopConfig(dataset_name = "TASK-left", dichotomization_label="left", test_mode=True)
 
     print(single_run(df, df_prediction, loop_config))
