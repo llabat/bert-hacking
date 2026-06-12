@@ -5,7 +5,7 @@ from datasets import DatasetDict, Dataset
 import numpy as np
 import pandas as pd 
 from sklearn.metrics import f1_score
-from torch import Tensor
+from torch import Tensor, no_grad
 from transformers import TrainingArguments, Trainer, EvalPrediction
 from tqdm import tqdm
 
@@ -108,40 +108,35 @@ def predict(model, ds : Dataset, loop_config: LoopConfig)->pd.DataFrame:
     ds = ds.with_format("torch", device=device)
     model = model.to(device=device)
     model.eval()
+    if str(device)=="cuda": model = model.bfloat16()
 
-    output_df = []
+    ID_= []
+    ID_chunk_ = []
+    GS_ = []
+    PRED_ = []
     for batch in tqdm(ds.batch(loop_config.device_batch_size_for_prediction), desc="Prediction"):
-        probs = (
-            model(input_ids = batch["input_ids"], attention_mask= batch["attention_mask"])
-            .logits
-            .detach().cpu()
-            .softmax(1)
-            .numpy()
-        )
+        with no_grad():
+            probs = (
+                model(input_ids = batch["input_ids"], attention_mask= batch["attention_mask"])
+                .logits.cpu().softmax(1).float().numpy()
+            )
         y_pred = np.argmax(probs, axis = 1).reshape(-1)
         
+        ID_ += batch["ID"].cpu().numpy()
+        GS_ += batch["LABEL"].cpu().numpy()
+        PRED_ += [loop_config.id2label[int(y_pred)]]
         if "ID_CHUNK" in batch:
-            output_df += [
-                {
-                    "ID": id,
-                    "ID_CHUNK": id_chunk,
-                    "GS-LABEL": label,
-                    "PRED-LABEL": loop_config.id2label[int(pred)],
-                }
-                for id, id_chunk, label, pred in zip(
-                    batch["ID"], 
-                    batch["ID_CHUNK"], 
-                    batch["LABEL"], 
-                    y_pred
-                )
-            ]
-        else:
-            output_df += [
-                {
-                    "ID": id,
-                    "GS-LABEL": label,
-                    "PRED-LABEL": loop_config.id2label[int(pred)],
-                }
-                for id, label, pred in zip(batch["ID"], batch["LABEL"], y_pred)
-            ]
-    return pd.DataFrame(output_df).set_index("ID")
+            ID_chunk_ += batch["ID"].cpu().numpy()
+    if len(ID_chunk_)>0:
+        return pd.DataFrame({
+            "ID": np.concat(ID_), 
+            "ID_CHUNK":np.concat(ID_chunk_), 
+            "GS-LABEL":np.concat(GS_), 
+            "PRED-LABEL":np.concat(PRED_)
+        }).set_index("ID")
+    
+    return pd.DataFrame({
+        "ID": np.concat(ID_), 
+        "GS-LABEL": np.concat(GS_), 
+        "PRED-LABEL": np.concat(PRED_)
+    }).set_index("ID")
