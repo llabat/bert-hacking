@@ -64,7 +64,7 @@ class LoopConfig:
                 raise ValueError((f"Error parsing splits_ratio, should receive a "
                     f"list of ints, received {kwargs.get('splits_ratio', None)}"))
         if param_name == "sampling_method":
-            sampling_method = kwargs.get("sampling_method", self.LOOP_DEFAULT["splits_ratio"])
+            sampling_method = kwargs.get("sampling_method", self.LOOP_DEFAULT["sampling_method"])
             try:
                 sampling_method = dict(sampling_method)
                 return{

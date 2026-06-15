@@ -144,6 +144,7 @@ def single_run(
                 "prediction-csv": f"./predictions_save/{hash_}.csv",
                 "effective_distrib": effective_distrib,
                 "trainer-logs": trainer_logs,
+                "time": str(pd.Timestamp.now())
             }                
             if "ID_CHUNK" in predictions.columns:
                 run_timer["saving_predictions_aggregated"] = time()

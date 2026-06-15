@@ -53,7 +53,6 @@ def dichotomize(df: pd.DataFrame, loop_config: LoopConfig) -> tuple[pd.DataFrame
     Dichotomize dataframe given a label
     """
     label = loop_config.dichotomization_label
-    
     if label not in df["LABEL"].values:
         raise ValueError(f"Label ({label}) not in df[\"LABEL\"]. "
                          f"Available labels: {df['LABEL'].unique()}")

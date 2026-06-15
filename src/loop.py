@@ -45,7 +45,7 @@ def loop(configuration_file : str, subsample_file: str|None = None):
                 logger.start_loop_log(loop_config)
                 if already_done(loop_config):
                     logger("Loop already done, skipping")
-                if not in_subsample(loop_config,dataset_info['name'], label, subsample_file):
+                elif not in_subsample(loop_config,dataset_info['name'], label, subsample_file):
                     logger("Loop not in subsample, skipping")
                 else:   
                     hash_, to_save = single_run(df, df_prediction, loop_config)

@@ -33,8 +33,8 @@ def load_training_arguments(loop_config: LoopConfig) -> TrainingArguments:
         metric_for_best_model="f1_macro",
         # Pipe
         output_dir = loop_config.output_dir,
-        eval_strategy = "epoch",
-        logging_strategy = "epoch",
+        eval_strategy = "epoch", 
+        logging_strategy = "epoch", 
         save_strategy = "epoch",
         load_best_model_at_end = True,
         save_total_limit =  2,

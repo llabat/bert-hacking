@@ -11,3 +11,4 @@ predictions_save/
 .env
 # Don't save updates of the results
 results/
+predictions_save_onyxia
