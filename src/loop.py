@@ -42,15 +42,11 @@ def loop(configuration_file : str, subsample_file: str|None = None):
                     device_batch_size = DEVICE_BATCH_SIZE,
                     device_batch_size_for_prediction = DEVICE_BATCH_SIZE_FOR_PREDICTION,
                 )
-                logger.start_loop_log(loop_config)
-                if already_done(loop_config):
-                    logger("Loop already done, skipping")
-                elif not in_subsample(loop_config,dataset_info['name'], label, subsample_file):
-                    logger("Loop not in subsample, skipping")
-                else:   
+                if not already_done(loop_config) and in_subsample(loop_config,dataset_info['name'], label, subsample_file):
+                    logger.start_loop_log(loop_config)
                     hash_, to_save = single_run(df, df_prediction, loop_config)
                     to_saving_logs(hash_, to_save)
-                logger("END LOOP" + "#" * 92)
+                    logger("END LOOP" + "#" * 92)
 
 if __name__ == "__main__":
 
