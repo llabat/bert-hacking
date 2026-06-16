@@ -13,9 +13,10 @@ from toolbox import (
     sanitize_df, 
     to_saving_logs, 
     already_done,
+    get_report,
     send_notification
 )
-from single_run import single_run
+from single_run import single_run_dummy
 
 TEST_MODE = False
 DEVICE_BATCH_SIZE = 4
@@ -43,7 +44,7 @@ def loop(configuration_file : str, subsample_file: str|None = None):
                 )
                 if not already_done(loop_config) and in_subsample(loop_config,dataset_info['name'], label, subsample_file):
                     logger.start_loop_log(loop_config)
-                    hash_, to_save = single_run(df, df_prediction, loop_config)
+                    hash_, to_save = single_run_dummy(df, df_prediction, loop_config)
                     to_saving_logs(hash_, to_save)
                     logger("END LOOP" + "#" * 92)
 
@@ -54,23 +55,14 @@ if __name__ == "__main__":
         argv = sys.argv[1:] 
         opts, _ = getopt.getopt(argv, "", ["config-file=", "subsample-file="]) 
         opts = {k:v for k,v in opts}
-        loop(
-            configuration_file=opts.get("--config-file", "config-loop.json"),
-            subsample_file=opts.get("--subsample-file")
-        )
+        configuration_file = opts.get("--config-file", "config-loop.json")
+        subsample_file = opts.get("--subsample-file")
+        loop(configuration_file,subsample_file)
     except Exception as e:
         print(e)
         reason.append(str(e))
     finally: 
-        with open("./results/saving_logs.json") as file:
-            report = [{
-                k:v for k, v in r.items() 
-                if k in ["dataset_name", "dichotomization_label", "model_name"]
-                }
-                for r in json.load(file).values()
-            ]
-            n_success = len(report)
-            report = pd.DataFrame(report).groupby(["dataset_name", "dichotomization_label", "model_name"]).size()
-        message = f"N success: {n_success}\nReport:\n{report}\nReason it stopped:{'  '.join(reason)}"
+        report = get_report(configuration_file, "saving_logs.json", subsample_file)
+        message = f"Report:\n{report}\n\nReason it stopped:{'  '.join(reason)}"
         send_notification(message)
 
