@@ -40,7 +40,7 @@ def get_config(configuration_file: str) -> tuple[list[dict], list[str], list]:
         raise TypeError((f"The object 'datasets', must be a list of dictionaries."
             f"At least one object within this list is not a dictionary"))
     if not np.array([
-        np.isin(["name", "filepath-train", "filepath-predict", "text_col", "label_col", "id_col"], list(d.keys())).all()
+        np.isin(["name", "filepath-train", "filepath-predict", "text_col", "label_col", "id_col", "labels"], list(d.keys())).all()
         for d in config_json["datasets"]
     ]).all():
         raise KeyError((f"All dictionaries in the object 'datasets' should contain "

@@ -28,11 +28,10 @@ def loop(configuration_file : str, subsample_file: str|None = None):
     for dataset_info in datasets_config:
         df = pd.read_csv(dataset_info["filepath-train"], sep=dataset_info.get("csv-sep", ","))
         df = sanitize_df(df, **dataset_info)
-        labels = list(df["LABEL"].unique())
 
         df_prediction = pd.read_csv(dataset_info["filepath-predict"], sep=dataset_info.get("csv-sep", ","))
         df_prediction = sanitize_df(df_prediction, **dataset_info)
-        for label in labels: 
+        for label in dataset_info["labels"]: 
             for local_config in product(*parameters_values):
                 loop_config = LoopConfig(
                     dataset_name=dataset_info['name'],

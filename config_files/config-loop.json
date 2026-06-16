@@ -5,6 +5,7 @@
             "name": "ideology_news",
             "text_col": "content",
             "label_col": "bias_text",
+            "labels": ["left", "right", "center"],
             "id_col": "ID",
             "filepath-predict": "./data/ideology_news-dataset_for_inference.csv",
             "extra_cols_to_keep" : ["year"]
