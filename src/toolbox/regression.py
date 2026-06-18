@@ -20,7 +20,7 @@ def perform_regression(
     X = sm.add_constant(X)
     try: 
         model = sm.Logit(Y,X, )
-        res = model.fit(maxiter=100, method=optimizer)
+        res = model.fit(maxiter=100, method=optimizer, disp=0)
 
         return {
             "success":True,
