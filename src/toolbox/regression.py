@@ -24,10 +24,10 @@ def perform_regression(
         if len(model.exog_names) == 1:
             #TODELETE
             logger = CustomLogger()
-            logger("X.value_counts()", type="REGRESSION")
-            logger(X.value_counts(), type="REGRESSION")
-            logger("Y.value_counts()", type="REGRESSION")
-            logger(Y.value_counts(), type="REGRESSION")
+            logger("x_column.value_counts()", type="REGRESSION")
+            logger(x_column.value_counts(), type="REGRESSION")
+            logger("y_column.value_counts()", type="REGRESSION")
+            logger(y_column.value_counts(), type="REGRESSION")
             
         return {
             "success":True,
