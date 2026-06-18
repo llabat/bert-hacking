@@ -151,7 +151,7 @@ def to_saving_logs(hash_: str, to_save: dict|None):
     saving_logs[hash_] = to_save
     
     with open("./results/saving_logs.json", "w") as file:
-        json.dump(saving_logs, file, ensure_ascii=True, indent=4)
+        json.dump(saving_logs, file, ensure_ascii=True)
 
 def aggregate_predictions(
     df : pd.DataFrame, 

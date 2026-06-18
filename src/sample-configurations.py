@@ -62,4 +62,4 @@ for N_annotated, model_name in product(GOLD_EXPLORATION_SPACE_ENGLISH["N_annotat
     i+=1
     
 with open("./config_files/sample-configurations.json","w") as file:
-    json.dump(configs_to_do, file, ensure_ascii=True, indent=4)
+    json.dump(configs_to_do, file, ensure_ascii=True)
