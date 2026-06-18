@@ -227,3 +227,126 @@ def send_notification(message : str = '') :
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as smtp : 
         print(smtp.login(EMAIL_FROM,EMAIL_FROM_PWD))
         print(smtp.sendmail(EMAIL_FROM,EMAIL_TO, em.as_string()))
+
+def get_run_info_for_regression(saving_logs_filename: str) -> dict[str:dict]:
+    """"""
+    if not saving_logs_filename in os.listdir("./results"):
+        raise FileExistsError((f"File {saving_logs_filename} does not exist in ./results\n"
+            f"Found:\n{os.listdir('./results')}"))
+    
+    with open(f"./results/{saving_logs_filename}") as file:
+        saving_logs = json.load(file)
+    
+    if not isinstance(saving_logs, dict):
+        raise TypeError((f"The saving_logs should be a dictionary.\n"
+            f"Found ({type(saving_logs)}):\n{saving_logs}"))
+    if  not np.array([isinstance(d, dict) for d in saving_logs.values()]).all():
+        raise TypeError((f"The saving_logs, must be a dictionary of dictionaries."
+            f"At least one object within this dictionary is not a dictionary"))
+    columns_to_find_in_dict = [
+        "dataset_name",
+        "prediction-csv", 
+    ]
+    if not np.array([np.isin(columns_to_find_in_dict, list(d.keys())).all() 
+        for d in saving_logs.values()]).all():
+        raise KeyError((f"All dictionaries should contain "
+            f"at least the following keys: {', '.join(columns_to_find_in_dict)}"
+            "Some were not found."))
+    def retrieve_info(saving_logs:dict, key_run: str)->dict:
+        keys = saving_logs[key_run].keys()
+        if "dataset_name" not in keys:
+            raise KeyError(f"For run {key_run}, could not find 'dataset_name'")
+        if "dichotomization_label" not in keys:
+            raise KeyError(f"For run {key_run}, could not find 'dichotomization_label'")
+
+        if "prediction-aggregated-csv" in keys:
+            prediction_key = "prediction-aggregated-csv"
+        elif "prediction-csv" in keys:
+            prediction_key = "prediction-csv"
+        else:
+            raise KeyError(f"For run {key_run}, could not find 'prediction-aggregated-csv'"
+                " nor 'prediction-csv'")
+        
+        return {
+            "dataset_name" : saving_logs[key_run]["dataset_name"],
+            "dichotomization_label" : saving_logs[key_run]["dichotomization_label"],
+            "prediction-filepath": saving_logs[key_run][prediction_key]
+        }
+
+    return {
+        key_run: retrieve_info(saving_logs,key_run)
+        for key_run in saving_logs
+    }
+
+def get_df_with_metadata(run_info: dict, datasets_config: list[dict]) -> pd.DataFrame:
+    """"""
+    predictions = pd.read_csv(run_info["prediction-filepath"])
+
+    if not np.isin(["ID", "GS-LABEL", "PRED-LABEL"], predictions.columns).all():
+        raise KeyError(f"The prediction file misses some necessary columns ('ID',"
+            f" 'GS-LABEL', 'PRED-LABEL'). Found: {predictions.columns}")
+    if not predictions["ID"].is_unique:
+        raise ValueError(f"(predictions) The ID column is not unique, please "
+            "aggregate the results before running the regression.")
+    
+    # Find the appropriate metadata file: 
+    candidates = [d for d in datasets_config if d["name"] == run_info["dataset_name"]]
+
+    if len(candidates) != 1:
+        raise ValueError(f"Should find one candidate in datasets_config; Found "
+            f"{len(candidates)} candidates.")
+    
+    metadata = pd.read_csv(candidates[0]["filepath-metadata"])
+    metadata_columns = candidates[0]["columns-for-independant-variables"]
+    if not np.isin(["ID",*metadata_columns], metadata.columns).all():
+        raise ValueError(f"The metadata file should contain the following columns:"
+            f"{', '.join(['ID', *metadata_columns])}. Found: {metadata.columns}")
+    if not metadata["ID"].is_unique:
+        raise ValueError(f"The metadata ID column is not unique.")
+    if not np.isin(predictions["ID"], metadata["ID"]).all():
+        raise ValueError(f"Some ID from predictions were not found in the metadata"
+            " file. Cannot join the two dataframes.")
+    output = (
+        predictions
+        .set_index("ID")
+        .join(metadata.set_index("ID")[metadata_columns])
+        .reset_index()
+    )
+    return output, metadata_columns
+
+def save_errors(run_hash, to_save) -> None:
+    with open("./results/errors_save.json") as file:
+        all_ = json.load(file)
+    all_[run_hash] = to_save 
+    with open("./results/errors_save.json", "w") as file:
+        json.dump(all_, file, ensure_ascii=True)
+
+def ensure_no_na(o: list|dict) -> list[dict]:
+    """"""
+    if isinstance(o, list):
+        out = []
+        for el in o:
+            if isinstance(el, list) or isinstance(el, dict):
+                out += [ensure_no_na(el)]
+            else: 
+                try:    out += [None if np.isnan(el) else el]
+                except: out += [el]
+    elif isinstance(o, dict):
+        out = {}
+        for k,v in o.items():
+            if isinstance(v, list) or isinstance(v, dict):
+                out[k] = ensure_no_na(v)
+            else: 
+                try:    out[k] = None if np.isnan(v) else v
+                except: out[k] = v
+
+    else:
+        out = o 
+    return out
+
+
+def regression_already_done(regression_hash: str) -> bool:
+    """"""
+    with open(f"./results/errors_save.json") as file:
+        keys = list(json.load(file).keys())
+    return regression_hash in keys

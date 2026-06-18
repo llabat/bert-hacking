@@ -15,6 +15,9 @@ if not Path("./predictions_save").is_dir(): os.mkdir("./predictions_save")
 if not Path("./results/saving_logs.json").exists():
     with open("./results/saving_logs.json", "w") as file:
         json.dump({}, file)
+if not Path("./results/errors_save.json").exists():
+    with open("./results/errors_save.json", "w") as file:
+        json.dump({}, file)
 
 from .LoopConfig import *
 from .CustomLogger import *
