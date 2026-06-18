@@ -11,7 +11,7 @@ from transformers import AutoModelForSequenceClassification
 from toolbox import (
     CustomLogger, 
     LoopConfig,
-    create_hash,
+    create_hash_from_config_loop,
     dichotomize,
     sample_N_documents,
     tokenize_chunk_pad,
@@ -52,7 +52,7 @@ def single_run(
     run_timer = {}
 
     # Use time as hash
-    hash_, logs_to_save = create_hash(loop_config), None
+    hash_, logs_to_save = create_hash_from_config_loop(loop_config), None
     logger(hash_)
     dichotomized_df, dichotomized_df_prediction, dsd_loop, model, ds_pred = (None,)*5
     try: 
@@ -175,7 +175,7 @@ def single_run_dummy(
     loop_config : LoopConfig,
 ) -> tuple[str, dict | None]: 
     """Dummy function to test the loop"""
-    hash_, logs_to_save = create_hash(loop_config), None
+    hash_, logs_to_save = create_hash_from_config_loop(loop_config), None
     logs_to_save = {
         "THIS IS DUMMY": "it is",
         **loop_config.to_dict(),

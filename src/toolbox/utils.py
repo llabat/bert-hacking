@@ -102,8 +102,11 @@ def in_subsample(
                 f" was invalid."))
     return False
 
-def create_hash(loop_config:LoopConfig)->str:
+def create_hash_from_config_loop(loop_config:LoopConfig)->str:
     s = str(time()).replace(".","") + f"-{loop_config.dataset_name}-{loop_config.dichotomization_label}"
+    return create_hash_from_string(s)
+
+def create_hash_from_string(s:str) -> str:
     h = hashlib.new('sha256')
     h.update(s.encode())
     return h.hexdigest()
