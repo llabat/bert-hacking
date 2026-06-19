@@ -81,8 +81,8 @@ def assess_errors(
     except:
         #TODELETE
         logger = CustomLogger()
-        logger(f"gold: \n {gold_reg_results["Covariate Names"]}", type="REGRESSION")
-        logger(f"pred: \n {pred_reg_results["Covariate Names"]}", type="REGRESSION")
+        logger(f"gold: \n {gold_reg_results['Covariate Names']}", type="REGRESSION")
+        logger(f"pred: \n {pred_reg_results['Covariate Names']}", type="REGRESSION")
         return {"error": "can't find x1"}
     if gold_index_x1 not in [0,1]: raise ValueError(f"Issue with gold_index_x1, found {gold_index_x1}, should be either 0 or 1")
     if pred_index_x1 not in [0,1]: raise ValueError(f"Issue with pred_index_x1, found {pred_index_x1}, should be either 0 or 1")
