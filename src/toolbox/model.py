@@ -126,14 +126,14 @@ def predict(model, ds : Dataset, loop_config: LoopConfig)->pd.DataFrame:
         GS_ += batch["LABEL"]
         PRED_ += [loop_config.id2label[int(y)] for y in y_pred]
         if "ID_CHUNK" in batch:
-            ID_chunk_ += batch["ID"]
+            ID_chunk_ += batch["ID_CHUNK"]
     if len(ID_chunk_)>0:
         return pd.DataFrame({
             "ID": ID_, 
             "ID_CHUNK":ID_chunk_, 
             "GS-LABEL":GS_, 
             "PRED-LABEL":PRED_
-        }).set_index("ID")
+        }).set_index("ID_CHUNK")
     
     return pd.DataFrame({
         "ID": ID_, 
