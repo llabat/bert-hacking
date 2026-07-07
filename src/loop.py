@@ -1,6 +1,5 @@
 import sys 
 import getopt 
-import json 
 
 from itertools import product
 import pandas as pd 
@@ -21,6 +20,9 @@ from single_run import single_run
 TEST_MODE = False
 DEVICE_BATCH_SIZE = 4
 DEVICE_BATCH_SIZE_FOR_PREDICTION = 256
+OVERLAP = 50
+AT_LEAST = 1
+THRESHOLD = None
 logger = CustomLogger("./custom_logs")
 
 def loop(configuration_file : str, subsample_file: str|None = None):
@@ -42,6 +44,7 @@ def loop(configuration_file : str, subsample_file: str|None = None):
                     device_batch_size = DEVICE_BATCH_SIZE,
                     device_batch_size_for_prediction = DEVICE_BATCH_SIZE_FOR_PREDICTION,
                 )
+                loop_config.set_fixed_parameters(OVERLAP, AT_LEAST, THRESHOLD)
                 if not already_done(loop_config) and in_subsample(loop_config,dataset_info['name'], label, subsample_file):
                     logger.start_loop_log(loop_config)
                     hash_, to_save = single_run(df, df_prediction, loop_config)

@@ -15,10 +15,8 @@ This file defines 2 functions as well as a main loop for launching a single run.
     should retrieve some parameters and launch a single run.
 """
 from time import time
-import json
-from typing import Any 
 
-from datasets import Dataset, DatasetDict
+from datasets import Dataset
 import numpy as np 
 import pandas as pd 
 from sklearn.metrics import f1_score
@@ -39,10 +37,6 @@ from toolbox import (
     sanitize_df,
     aggregate_predictions, 
 )
-
-OVERLAP = 50
-AT_LEAST = 1
-THRESHOLD = None
 
 def single_run(
         df_training  : pd.DataFrame,
@@ -105,7 +99,6 @@ def single_run(
     """
 
     logger = CustomLogger("./custom_logs")
-    loop_config.set_fixed_parameters(OVERLAP, AT_LEAST, THRESHOLD)
     run_timer = {}
 
     # Use time as hash
