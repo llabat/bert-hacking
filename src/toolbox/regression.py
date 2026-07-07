@@ -71,7 +71,8 @@ def assess_errors(
         pred_labels_binarised : pd.Series,
         gold_labels_binarised: pd.Series,
     ) -> dict:
-    """"""
+    """Retrieve the regression results from the prediction and gold standard labels
+    and assess the errors as defined in LLM-Hacking."""
     if not (pred_reg_results["success"] and gold_reg_results["success"]):
         return {}
     
@@ -79,13 +80,13 @@ def assess_errors(
         gold_index_x1 = gold_reg_results["Covariate Names"].index("x1")
         pred_index_x1 = pred_reg_results["Covariate Names"].index("x1")
     except:
-        #TODELETE
-        # logger = CustomLogger()
-        # logger(f"gold: \n {gold_reg_results['Covariate Names']}", type="REGRESSION")
-        # logger(f"pred: \n {pred_reg_results['Covariate Names']}", type="REGRESSION")
+        # This error occurs when the predictions contain only one label. Therefore
+        # the regression fails but returns useless output.
         return {"error": "can't find x1"}
-    if gold_index_x1 not in [0,1]: raise ValueError(f"Issue with gold_index_x1, found {gold_index_x1}, should be either 0 or 1")
-    if pred_index_x1 not in [0,1]: raise ValueError(f"Issue with pred_index_x1, found {pred_index_x1}, should be either 0 or 1")
+    if gold_index_x1 not in [0,1]: 
+        raise ValueError(f"Issue with gold_index_x1, found {gold_index_x1}, should be either 0 or 1")
+    if pred_index_x1 not in [0,1]: 
+        raise ValueError(f"Issue with pred_index_x1, found {pred_index_x1}, should be either 0 or 1")
 
     gold_p_value = gold_reg_results["pvalues"][gold_index_x1]
     pred_p_value = pred_reg_results["pvalues"][pred_index_x1]
@@ -136,6 +137,12 @@ def run_regression_and_assess_errors(
     regression_col :str, 
     regression_unique_value:str,
 ) -> dict:
+    """Takes the regression dataframe (must contain PRED-LABEL, GS-LABEL). 
+    Perform the regression on the pred label and Gold standard label and assess 
+    the errors. 
+    Cache the gold regression results. One file per dataset_name x dichotomization_label.
+    x regression_col x regression_unique_value
+    """
     pred_labels_binarised = df_regression["PRED-LABEL"] == run_info["dichotomization_label"]
     gold_labels_binarised = df_regression["GS-LABEL"] == run_info["dichotomization_label"]
 
