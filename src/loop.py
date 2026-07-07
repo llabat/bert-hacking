@@ -1,3 +1,7 @@
+"""
+Loop file to run all fine tuning in a configuration file. The number of fine-tuning
+can be reduced using a subsamble file.
+"""
 import sys 
 import getopt 
 
@@ -17,6 +21,7 @@ from toolbox import (
 )
 from single_run import single_run
 
+# Fixed parameters for all loops
 TEST_MODE = False
 DEVICE_BATCH_SIZE = 4
 DEVICE_BATCH_SIZE_FOR_PREDICTION = 256
@@ -26,6 +31,13 @@ THRESHOLD = None
 logger = CustomLogger("./custom_logs")
 
 def loop(configuration_file : str, subsample_file: str|None = None):
+    """Loop file to run all fine tuning in a configuration file. The number of fine-tuning
+    can be reduced using a subsamble file.
+    The configuration file is read with get_config. See get_config and current file for
+    the architecture.
+    The subsample file is a list of dictionary containing all the configurations to 
+    be run. 
+    """
 
     datasets_config, parameter_names,parameters_values = get_config(configuration_file)
     for dataset_info in datasets_config:
