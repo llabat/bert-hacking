@@ -1,3 +1,6 @@
+"""
+Import toolbox functions and objects and set up the file architecture
+"""
 import os 
 from pathlib import Path 
 import json
