@@ -78,8 +78,6 @@ def get_config(configuration_file: str) -> tuple[list[dict], list[str], list]:
 
 def in_subsample(
     loop_config: LoopConfig, 
-    dataset_name:str, 
-    dichotomization_label:str, 
     subsample_file: str|None
 )->bool:
     """If provided, read the subsample file and check if the current loop config
@@ -98,7 +96,10 @@ def in_subsample(
         raise TypeError((f"The subsample should be a list of configurations.\n"
             f"Found ({type(subsample)}):\n{subsample}"))
     
-    ds_info={"dataset_name":dataset_name, "dichotomization_label":dichotomization_label}
+    ds_info={
+        "dataset_name":loop_config.dataset_name, 
+        "dichotomization_label":loop_config.dichotomization_label
+    }
     for config in subsample:
         try: 
             if LoopConfig(**ds_info,**config) == loop_config:

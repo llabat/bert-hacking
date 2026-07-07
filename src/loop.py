@@ -45,7 +45,7 @@ def loop(configuration_file : str, subsample_file: str|None = None):
                     device_batch_size_for_prediction = DEVICE_BATCH_SIZE_FOR_PREDICTION,
                 )
                 loop_config.set_fixed_parameters(OVERLAP, AT_LEAST, THRESHOLD)
-                if not already_done(loop_config) and in_subsample(loop_config,dataset_info['name'], label, subsample_file):
+                if not already_done(loop_config) and in_subsample(loop_config, subsample_file):
                     logger.start_loop_log(loop_config)
                     hash_, to_save = single_run(df, df_prediction, loop_config)
                     to_saving_logs(hash_, to_save)
