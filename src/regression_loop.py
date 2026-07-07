@@ -11,19 +11,23 @@ from toolbox import (
     get_run_info_for_regression, 
     get_df_with_metadata, 
     create_hash_from_string,
-    regression_already_done, 
     run_regression_and_assess_errors,
-    save_errors, 
     send_notification
 )
 
 def regression_loop(configuration_filename: str, saving_logs_filename: str) -> None: 
-    """"""
+    """Run all the regressions and assess the errors for a given a configuration 
+    file (for metadatacolumns) and saving logs (for the predictions).
+    Save the results by batch, one file = one fine-tuning (= run, i.e. one set of predictions)
+    Each regression and error assessment has a unique hash depending on the run, 
+    metadata column and metadata value.
+    """
+
     datasets_config, _, _ = get_config(configuration_filename)
     all_run_info_for_regression = get_run_info_for_regression(saving_logs_filename)
 
     for run_hash, run_info in tqdm(all_run_info_for_regression.items(), position=0):
-        if f"{run_hash}.json" in os.listdir("./results/regressions"):
+        if f"{run_hash}.json" in os.listdir("./results/regressions"): # already done
             continue
         df_regression, metadata_columns = get_df_with_metadata(run_info, datasets_config)
         batch_regressions = {}
@@ -60,7 +64,7 @@ if __name__ == "__main__":
         print(e)
         reason.append(str(e))
     finally: 
-        message = f"Loop regression"
+        message = "Loop regression"
         send_notification(message)
 
 
