@@ -66,6 +66,7 @@ def get_report(
     result_filename: str,
     subsample_filename: str|None=None, 
 ) -> str:
+    """Create a full report for all datasets found in configuration file."""
     report =  ""
     datasets_config, _, _ = get_config(configuration_filename)
     for dataset_info in datasets_config:

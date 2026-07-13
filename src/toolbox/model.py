@@ -63,8 +63,7 @@ def train_model(
     dsd : DatasetDict,
     loop_config: LoopConfig,
 ) -> tuple[str, dict] :
-    """
-    """
+    """Select the device, format de dataset and launch training"""
     output, trainer_logs = None, None
     try: 
         device = get_device()
@@ -93,6 +92,9 @@ def train_model(
     return output, trainer_logs
 
 def predict(model, ds : Dataset, loop_config: LoopConfig)->pd.DataFrame:
+    """Use model for prediction using bf16. Return dataframe with ID or ID_CHUNK 
+    as index."""
+    
     if "input_ids" not in ds.features:
         raise ValueError("Please tokenize texts first")
     if "attention_mask" not in ds.features:
@@ -126,14 +128,14 @@ def predict(model, ds : Dataset, loop_config: LoopConfig)->pd.DataFrame:
         GS_ += batch["LABEL"]
         PRED_ += [loop_config.id2label[int(y)] for y in y_pred]
         if "ID_CHUNK" in batch:
-            ID_chunk_ += batch["ID"]
+            ID_chunk_ += batch["ID_CHUNK"]
     if len(ID_chunk_)>0:
         return pd.DataFrame({
             "ID": ID_, 
             "ID_CHUNK":ID_chunk_, 
             "GS-LABEL":GS_, 
             "PRED-LABEL":PRED_
-        }).set_index("ID")
+        }).set_index("ID_CHUNK")
     
     return pd.DataFrame({
         "ID": ID_, 
