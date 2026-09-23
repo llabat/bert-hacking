@@ -129,7 +129,7 @@ def sample_N_documents(df: pd.DataFrame, loop_config: LoopConfig)->tuple[pd.Data
         f"{loop_config.N_annotated}-{stratification_col}-{balance}-{loop_config.seed}.csv")
     
     if cache_file in os.listdir("./.cache"):
-        id_samples = pd.read_csv(f"./.cache/{cache_file}")["id_samples"].tolist()
+        id_samples = pd.read_csv(f"./.cache/{cache_file}")["id_samples"].astype(str).tolist()
     else: 
         id_samples = _sample_N_documents_by_their_ID(df, loop_config)
         pd.Series(id_samples, name="id_samples").to_csv(f"./.cache/{cache_file}", index=False)
