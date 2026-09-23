@@ -10,7 +10,8 @@
             "filepath-predict": "./data/ideology_news-dataset_for_inference.csv",
             "filepath-metadata": "./data/ideology_news-full.csv",
             "columns-for-independant-variables": ["topic", "source"],
-            "extra_cols_to_keep" : ["year"]
+            "extra_cols_to_keep" : ["year"],
+            "csv-sep" : ";" 
         }
     ],
     "parameters":{
