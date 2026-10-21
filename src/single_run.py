@@ -1,4 +1,5 @@
 from time import time
+import traceback
 import json
 from typing import Any 
 
@@ -6,7 +7,7 @@ from datasets import Dataset, DatasetDict
 import numpy as np 
 import pandas as pd 
 from sklearn.metrics import f1_score
-from transformers import AutoModelForSequenceClassification
+from transformers import AutoModelForSequenceClassification, set_seed
 
 from toolbox import (
     CustomLogger, 
@@ -82,6 +83,8 @@ def single_run(
         
         # Prepare model: model_name
         run_timer["training"] = time()
+        # Seed before instantiating the model so the classification head init is reproducible
+        set_seed(loop_config.seed)
         model = AutoModelForSequenceClassification.from_pretrained(
             loop_config.model_name,
             num_labels = len(label2id),
@@ -162,7 +165,7 @@ def single_run(
             
     except Exception as e: 
         logger("Loop failed")
-        logger(f"Error during loop {hash_}\n{loop_config}\n{e}\n\n", type="ERRORS")
+        logger(f"Error during loop {hash_}\n{loop_config}\n{traceback.format_exc()}\n\n", type="ERRORS")
     finally: 
             del dichotomized_df, dichotomized_df_prediction, dsd_loop, model, ds_pred
             clean() 

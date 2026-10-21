@@ -65,7 +65,9 @@ def train_model(
 ) -> tuple[str, dict] :
     """
     """
-    output, trainer_logs = None, None
+    # Errors propagate to single_run, which logs them; swallowing them here only
+    # led to a confusing from_pretrained(None) failure later on.
+    trainer = None
     try: 
         device = get_device()
         for split in dsd:
@@ -85,8 +87,6 @@ def train_model(
         trainer.train()
         output = trainer.state.best_model_checkpoint
         trainer_logs = retrieve_trainer_logs(training_args.output_dir)
-    except Exception as e:
-        print(f"ERROR in train_model: \n{e}")
     finally:
         del trainer
         clean()
@@ -126,7 +126,7 @@ def predict(model, ds : Dataset, loop_config: LoopConfig)->pd.DataFrame:
         GS_ += batch["LABEL"]
         PRED_ += [loop_config.id2label[int(y)] for y in y_pred]
         if "ID_CHUNK" in batch:
-            ID_chunk_ += batch["ID"]
+            ID_chunk_ += batch["ID_CHUNK"]
     if len(ID_chunk_)>0:
         return pd.DataFrame({
             "ID": ID_, 

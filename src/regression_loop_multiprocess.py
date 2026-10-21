@@ -10,7 +10,7 @@ from toolbox import (
     get_run_info_for_regression, 
     get_df_with_metadata, 
     create_hash_from_string,
-    regression_already_done, 
+    load_errors_save, 
     run_regression_and_assess_errors,
     save_errors, 
     send_notification
@@ -51,7 +51,9 @@ def main(configuration_filename, saving_logs_filename):
         saving_logs_filename
     )
 
-    # Build all tasks first
+    # Read once: re-reading the whole results file for every regression is quadratic
+    done_hashes = set(load_errors_save())
+
     for run_hash, run_info in tqdm(all_run_info_for_regression.items(), position=0, desc="Runs"):
         df_regression, metadata_columns = get_df_with_metadata(
             run_info,
@@ -69,7 +71,7 @@ def main(configuration_filename, saving_logs_filename):
                     f"{run_hash}-{regression_col}-{regression_unique_value}"
                 )
 
-                if regression_already_done(regression_hash):
+                if regression_hash in done_hashes:
                     continue
 
                 tasks.append(
@@ -82,6 +84,7 @@ def main(configuration_filename, saving_logs_filename):
                     )
                 )
 
+        batch_hashes, batch_to_save = [], []
         with ProcessPoolExecutor(max_workers=5) as executor:
             futures = [
                 executor.submit(regression_task, task)
@@ -102,16 +105,18 @@ def main(configuration_filename, saving_logs_filename):
                     output,
                 ) = future.result()
 
-                # Single process writes => no file corruption
-                save_errors(
-                    regression_hash,
-                    {
-                        **run_info,
-                        "regression_col": regression_col,
-                        "regression_unique_value": regression_unique_value,
-                        **output,
-                    },
-                )
+                batch_hashes.append(regression_hash)
+                batch_to_save.append({
+                    **run_info,
+                    "regression_col": regression_col,
+                    "regression_unique_value": regression_unique_value,
+                    **output,
+                })
+
+        # Single process writes, once per run => no file corruption
+        if batch_hashes:
+            save_errors(batch_hashes, batch_to_save)
+            done_hashes.update(batch_hashes)
 
 if __name__ == "__main__":
     reason = []

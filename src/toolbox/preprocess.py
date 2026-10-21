@@ -66,8 +66,14 @@ def get_max_tokens(N_documents:dict[str:dict])->int:
     """"""
     return max([d["N_tokens"] for d in N_documents.values()])
 
-def cap_max_length(max_n_tokens : int, loop_config: LoopConfig) -> int:
-    model_max = AutoConfig.from_pretrained(loop_config.model_name).max_position_embeddings - 1
+def cap_max_length(max_n_tokens : int, tokenizer, loop_config: LoopConfig) -> int:
+    # max_position_embeddings alone is wrong for RoBERTa-like models (514 positions
+    # but 512 usable tokens), and some tokenizers report a huge model_max_length
+    # when unset (e.g. deberta-v2): take the min of both.
+    model_max = min(
+        tokenizer.model_max_length,
+        AutoConfig.from_pretrained(loop_config.model_name).max_position_embeddings,
+    )
     return int(min(max_n_tokens, model_max))
 
 def _sample_N_documents_by_their_ID(df: pd.DataFrame, loop_config: LoopConfig)->list:
@@ -89,11 +95,16 @@ def _sample_N_documents_by_their_ID(df: pd.DataFrame, loop_config: LoopConfig)->
     # Switch from LABEL/not-LABEL to 1/0 for easier distribution calculation
     df_for_ID_sampling["LABEL"] = df_for_ID_sampling["LABEL"].map(loop_config.label2id)
     rng = np.random.default_rng(seed=loop_config.seed)
-    N_per_strata = int(loop_config.N_annotated / 
-                       df_for_ID_sampling[stratification_col].nunique())
+    # Spread the remainder over the first strata so that exactly N_annotated rows are sampled
+    N_strata = df_for_ID_sampling[stratification_col].nunique()
+    N_base, N_remainder = divmod(loop_config.N_annotated, N_strata)
 
     id_samples = []
-    for _, strata_df in df_for_ID_sampling.groupby(stratification_col):
+    for i_strata, (strata_value, strata_df) in enumerate(df_for_ID_sampling.groupby(stratification_col)):
+        N_per_strata = N_base + int(i_strata < N_remainder)
+        if len(strata_df) < N_per_strata:
+            raise ValueError(f"Stratum {stratification_col}={strata_value} has "
+                f"{len(strata_df)} rows, cannot sample {N_per_strata}")
         batch_indexes = []
         available_rows = strata_df.copy().set_index("ID")
         available_rows_indexes = list(available_rows.index)
@@ -101,7 +112,11 @@ def _sample_N_documents_by_their_ID(df: pd.DataFrame, loop_config: LoopConfig)->
             local_distrib = available_rows["LABEL"].mean()
             if balance == "random":
                 local_weights = None
-            else: 
+            elif local_distrib in (0, 1):
+                raise ValueError(f"Cannot sample with balance={balance}: stratum "
+                    f"{stratification_col}={strata_value} has no "
+                    f"{'positive' if local_distrib == 0 else 'negative'} rows left")
+            else:
                 local_weights = (
                     available_rows
                     ["LABEL"]
@@ -125,8 +140,9 @@ def sample_N_documents(df: pd.DataFrame, loop_config: LoopConfig)->tuple[pd.Data
     """
     stratification_col = loop_config.sampling_method["stratified"]
     balance = loop_config.sampling_method["balance"]
+    # v2: stratified samples now contain exactly N_annotated rows; don't reuse older caches
     cache_file = (f"{loop_config.dataset_name}-{loop_config.dichotomization_label}-"
-        f"{loop_config.N_annotated}-{stratification_col}-{balance}-{loop_config.seed}.csv")
+        f"{loop_config.N_annotated}-{stratification_col}-{balance}-{loop_config.seed}-v2.csv")
     
     if cache_file in os.listdir("./.cache"):
         id_samples = pd.read_csv(f"./.cache/{cache_file}")["id_samples"].astype(str).tolist()
@@ -155,7 +171,8 @@ def split_ds(N_documents: dict[str:dict], loop_config: LoopConfig)-> DatasetDict
             f"{splits_ratio}"
         )
     unique_IDs = (
-        pd.Series(list(set([d["ID"] for d in N_documents.values()]))) # Unique
+        # sorted: set order of str depends on PYTHONHASHSEED, which made the split non-reproducible
+        pd.Series(sorted(set([d["ID"] for d in N_documents.values()]))) # Unique
         .sample(frac=1, random_state=loop_config.seed) # Shuffle
     )
     N_ids = len(unique_IDs)
@@ -218,7 +235,7 @@ def chunk_texts(N_documents: dict[str:dict], chunk_length: int, overlap: int) ->
     output = {}
     for id_doc, row in N_documents.items():
         if row["N_tokens"] > chunk_length:
-            index_max = row["N_tokens"] - 2 # length - 1, -1 to not sample SEP twice
+            index_max = row["N_tokens"] - 1 # index of SEP, excluded by the slices below
             s, e, i_chunk = 1, effective_chunk_length + 1, 0 # Start at 1 not to  sample CLS twice
             while s < index_max:
                 # skip chunks that are too small
@@ -280,7 +297,7 @@ def tokenize_chunk_pad(
     N_documents = format_labels(N_documents, loop_config)
     
     max_n_tokens = get_max_tokens(N_documents)
-    max_length_capped = cap_max_length(max_n_tokens, loop_config)
+    max_length_capped = cap_max_length(max_n_tokens, tokenizer, loop_config)
     
     if max_n_tokens > max_length_capped: 
         N_documents = chunk_texts(N_documents, max_length_capped, loop_config.OVERLAP)

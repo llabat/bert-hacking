@@ -317,10 +317,15 @@ def get_df_with_metadata(run_info: dict, datasets_config: list[dict]) -> pd.Data
     )
     return output, metadata_columns
 
-def save_errors(batch_run_hash: list[str], batch_to_save: list[str]) -> None:
+def load_errors_save() -> dict:
+    if not os.path.exists("./results/errors_save.json"):
+        return {}
     with open("./results/errors_save.json") as file:
-        all_ = json.load(file)
-    for hash_, to_save in zip(batch_run_hash, batch_to_save):
+        return json.load(file)
+
+def save_errors(batch_run_hash: list[str], batch_to_save: list[dict]) -> None:
+    all_ = load_errors_save()
+    for hash_, to_save in zip(batch_run_hash, batch_to_save, strict=True):
         all_[hash_] = to_save 
     with open("./results/errors_save.json", "w") as file:
         json.dump(all_, file, ensure_ascii=True)
@@ -351,6 +356,4 @@ def ensure_no_na(o: list|dict) -> list[dict]:
 
 def regression_already_done(regression_hash: str) -> bool:
     """"""
-    with open(f"./results/errors_save.json") as file:
-        keys = list(json.load(file).keys())
-    return regression_hash in keys
+    return regression_hash in load_errors_save()

@@ -105,10 +105,14 @@ def assess_errors(
     gold_significant = gold_p_value < 0.05
     pred_significant = pred_p_value < 0.05
 
-    error_M_value = float(
-        int(gold_significant and pred_significant and (gold_coef * pred_coef >= 0))
-        *
-        abs( -1 + pred_delta / gold_delta)
+    # gold_delta == 0 (perfectly balanced gold labels) makes the relative error undefined
+    error_M_value = (
+        float(
+            int(gold_significant and pred_significant and (gold_coef * pred_coef >= 0))
+            *
+            abs( -1 + pred_delta / gold_delta)
+        )
+        if gold_delta != 0 else np.nan
     )
 
     return {
@@ -126,7 +130,7 @@ def assess_errors(
             if not np.isnan([gold_p_value, pred_p_value, gold_coef, pred_coef]).any() 
             else None),
         "error_type_M": (error_M_value
-            if not np.isnan([gold_p_value, pred_p_value, gold_coef, pred_coef, pred_delta, gold_delta]).any() 
+            if not np.isnan([gold_p_value, pred_p_value, gold_coef, pred_coef, error_M_value]).any()
             else None),
     }
 

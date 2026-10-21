@@ -139,7 +139,7 @@ class LoopConfig:
     
     def __eq__(self, __value: object) -> bool:
         if not isinstance(__value, LoopConfig):
-            return TypeError("Can only check equality with LOOP_CONFIG objects")
+            return NotImplemented
         check_list = [
             self.__getattribute__(key) == __value.__getattribute__(key)
             for key in self.VARIABLES_TO_CHECK_FOR_EQUALITY

@@ -1,0 +1,259 @@
+BERT-HACKING CODE REVIEW
+========================
+Date: 2026-10-21
+Scope: src/ (single_run, loop, regression loops, toolbox/*), config_files/
+Branch with fixes: fix/correctness-bugs
+
+
+SUMMARY
+-------
+The pipeline works end to end for BERT on the ideology_news setup, but:
+  - several bugs affect the validity or reproducibility of results
+    (section 1, all fixed on this branch);
+  - the design makes the code about twice as long as it needs to be,
+    slow at the scale of the planned grid (~11k configs per task), and
+    fragile to interruptions (section 3).
+
+Fixes 1, 2, 5, 9 and 10 below change the outputs of a run. Results produced
+before these fixes are not strictly comparable with results produced after.
+
+
+1. BUGS (FIXED ON THIS BRANCH)
+------------------------------
+
+[1] Training was not reproducible (single_run.py)
+    The model was instantiated before the Trainer, and Trainer.__init__ is
+    what calls set_seed(). The randomly initialized classification head
+    therefore differed on every run, despite the protocol stating that the
+    whole procedure is seeded. Verified: two loads of bert-base-uncased
+    give different classifier weights without set_seed, identical with it.
+    Fix: transformers.set_seed(loop_config.seed) right before from_pretrained.
+    Impact: every model trained before this fix had an unseeded head.
+
+[2] Wrong context window: crash for RoBERTa/XLM-R (preprocess.py, cap_max_length)
+    The maximum length was max_position_embeddings - 1. For RoBERTa-like
+    models that is 513, but only 512 tokens are usable (positions are offset
+    by padding_idx + 1). Any document longer than 512 tokens leads to an
+    index error on GPU. For BERT the value was 511 instead of 512.
+    Fix: min(tokenizer.model_max_length, max_position_embeddings).
+    deberta-v2's tokenizer reports a huge model_max_length (unset), hence
+    the min. Values now: BERT 512, RoBERTa 512, DeBERTa-v2 512,
+    ModernBERT 8192.
+    Impact: BERT runs now use 512-token chunks instead of 511.
+    Note: with ModernBERT every document is padded to the longest sampled
+    document (up to 8192 tokens). That is costly in memory; consider an
+    explicit cap.
+
+[3] Type M error: division by zero (regression.py, assess_errors)
+    The Type M error divides by gold_delta = |P(gold=1) - P(gold=0)|, which
+    is 0 when gold labels are perfectly balanced.
+    Fix: error_type_M = None in that case.
+    CORRECTION TO THE INITIAL REVIEW: I first reported that Type M should be
+    computed on regression coefficients rather than on label prevalence.
+    PROTOCOLE_EXP.md (section "Type M Risk") explicitly defines it on label
+    prevalence, |delta_pred - delta_GS| / delta_GS, and the code matches.
+    Whether this matches the definition in the LLM Hacking paper (which
+    describes M errors as effect-size exaggeration) is worth discussing
+    with the team, but the code is not wrong with respect to the protocol.
+    Note: the formula in PROTOCOLE_EXP.md:105 says "GS_coef * pred_coef < 0"
+    for M; the code and the demo snippet use "> 0" (same sign), which is the
+    consistent one. The line at :105 is a typo.
+
+[4] regression_loop_multiprocess.py wrote garbage and crashed (utils.save_errors)
+    save_errors(hashes: list, to_save: list) was called with a single hash
+    string and a single dict. zip() then paired the characters of the hash
+    with the keys of the dict. Also, results/errors_save.json was never
+    created, so the script failed on its first read. And
+    regression_already_done re-read the entire JSON for each regression
+    (quadratic cost).
+    Fix: results are collected per run and saved in one call; a missing
+    file is treated as empty (load_errors_save); already-done hashes are
+    loaded once into a set.
+
+[5] Chunking dropped the last token of every long document (preprocess.py, chunk_texts)
+    Off-by-one: index_max was N_tokens - 2, but the slices are end-exclusive,
+    so the last content token was never included in any chunk.
+    Fix: index_max = N_tokens - 1 (index of [SEP]). Checked on a synthetic
+    document: all content tokens now appear in at least one chunk.
+
+[6] ID_CHUNK column was a copy of ID (model.py, predict)
+    ID_chunk_ += batch["ID"]  ->  batch["ID_CHUNK"].
+    Did not affect aggregated predictions (which group by ID), only the
+    saved chunk-level CSVs.
+
+[7] LoopConfig.__eq__ returned an exception instead of raising it
+    "return TypeError(...)" returns a truthy object, so comparing a
+    LoopConfig with anything else evaluated as equal.
+    Fix: return NotImplemented (standard Python protocol).
+
+[8] Training errors were swallowed (model.py, train_model)
+    Every exception was caught and printed, and the function returned None.
+    The failure then surfaced later as a confusing from_pretrained(None)
+    error. If Trainer() itself failed, "del trainer" raised
+    UnboundLocalError and hid the original error.
+    Fix: errors propagate to single_run, which already catches and logs
+    them; the ERRORS log now contains the full traceback.
+
+[9] Sampling edge cases (preprocess.py, _sample_N_documents_by_their_ID)
+    - N_per_strata = int(N / n_strata) truncated, so stratified samples
+      had fewer than N_annotated documents (e.g. 500 over 3 years -> 498).
+      Fix: the remainder is spread over the first strata; exactly
+      N_annotated rows are now sampled.
+    - A stratum with fewer rows than requested crashed inside rng.choice;
+      it now raises an explicit error.
+    - With balance != "random", running out of positives or negatives in a
+      stratum caused a division by zero (NaN probabilities). It now raises
+      an explicit error.
+    The sample cache filename gets a "-v2" suffix so stale caches are not
+    reused. Non-stratified samples are unchanged by this fix.
+
+[10] Train/eval/test splits were not reproducible (preprocess.py, split_ds)
+    The unique IDs were shuffled from list(set(ids)). The iteration order of
+    a set of strings depends on PYTHONHASHSEED, which Python randomizes for
+    every process, so the same seed gave different splits across runs.
+    Verified: same IDs, random_state=42, PYTHONHASHSEED=1 vs 2 -> different
+    orders. Fix: sorted(set(ids)) before shuffling.
+    Impact: every split made before this fix depended on the process.
+
+
+2. DESIGN CHOICES TO DISCUSS (NOT CHANGED)
+------------------------------------------
+
+- Chunk aggregation uses AT_LEAST = 1: a document is predicted positive if
+  any one of its chunks is predicted positive. That systematically
+  inflates predicted prevalence for long documents, which feeds directly
+  into the regressions and the Type M error (which is defined on
+  prevalence). A threshold on the mean (THRESHOLD = 0.5) or averaging
+  logits is more neutral.
+- Sampling draws documents one by one, so the number of positives follows
+  Binomial(N, balance) rather than being exactly round(balance * N). It is
+  also O(N^2) in pandas. Sampling an exact count would be simpler and
+  faster, but it would change the samples compared with existing runs.
+- During training, the eval split is scored at chunk level, while the test
+  split is scored at document level after aggregation.
+- In regression_loop*.py, if a metadata column is numeric (e.g. year),
+  regression_unique_value is a numpy int and json.dump will fail. This is
+  not an issue with the current columns (topic, source).
+
+
+3. DESIGN / CODE QUALITY
+------------------------
+
+3.1 Run identity and result storage
+    - Run IDs hash time(), so the same config gets a new ID every time.
+      As a result, already_done() and in_subsample() rebuild a LoopConfig
+      for every saved/subsampled entry on every iteration: with 11,520
+      configs and a 960-entry subsample, that is ~11M object constructions
+      just to decide what to run. Hashing the config itself makes
+      "already done" a file-existence check, and iterating over the
+      subsample directly removes the filter.
+    - saving_logs.json and errors_save.json are fully re-read and
+      re-written after every run. A crash mid-write corrupts them, cost
+      grows quadratically, and they cannot be shared between parallel
+      workers. One file per run (results/<run_id>/...) or an append-only
+      JSONL file avoids all three problems.
+
+3.2 Configuration
+    - LoopConfig is ~150 lines of hand-written coercion, defaults,
+      equality and to_dict that a frozen @dataclass gives in ~20 lines.
+    - It mixes configuration with runtime state (label2id, id2label,
+      OVERLAP, AT_LEAST, THRESHOLD are set later by other code), so the
+      same object means different things at different points of a run.
+    - get_config validates the JSON with ~50 lines of manual checks;
+      a dataclass or pydantic schema does that declaratively.
+    - OVERLAP / AT_LEAST / THRESHOLD are module constants in single_run.py,
+      TEST_MODE / DEVICE_BATCH_SIZE are constants in loop.py: run
+      parameters are split across code and config files.
+
+3.3 Package structure
+    - Importing toolbox creates 8 directories in the current working
+      directory (side effect at import).
+    - Paths ("./results", "./.cache", "./config_files", ...) are hardcoded
+      everywhere: scripts only work when run from the repo root.
+    - Intra-package imports ("from . import LoopConfig, load_tokenizer")
+      only work because of the order of lines in __init__.py.
+
+3.4 Preprocessing
+    - Data goes DataFrame -> dict[ID -> dict] -> Dataset, the full training
+      set is tokenized and cached as one large JSON, and every sequence is
+      padded to the global max length.
+      datasets.map(tokenizer, truncation=True, return_overflowing_tokens=True,
+      stride=OVERLAP) + DataCollatorWithPadding would replace chunk_texts,
+      pad_texts, join_tokenized_texts, format_labels and the JSON token
+      cache (~150 lines), and pad per batch instead of globally.
+    - split_ds checks membership with "d['ID'] in ids_train.values" (linear
+      scan per document) and calls N_documents.popitem(), which mutates the
+      caller's dict just to peek at one element.
+
+3.5 Reimplemented standard tools
+    - CustomLogger -> logging module (it reopens the file and lists the
+      directory on every message).
+    - getopt -> argparse.
+    - ensure_no_na -> pandas to_json / a JSON encoder.
+    - np.array([...]).all() / np.isin(a, b).all() for plain Python
+      collections -> all(...) / set(a) <= set(b).
+    - perform_regression returns a 15-key dict of None on failure; a
+      {"success": False, "error": str(e)} is enough.
+
+3.6 Duplicated and dead code
+    - regression_loop.py and regression_loop_multiprocess.py do the same
+      thing and write different output formats (results/regressions/*.json
+      vs results/errors_save.json). Keep one.
+    - chunking.py runs a script with hardcoded paths at import time and is
+      not used by the pipeline (it implements a different, word-based
+      chunking).
+    - config_files/config.yml and example.yml are not read by anything;
+      pyyaml is then an unused dependency.
+    - single_run_dummy, the TODELETE comment blocks, and
+      "if len(model.exog_names) == 1: pass" in regression.py.
+    - calibration_loop.py moves files with os.system("mv ...").
+
+3.7 single_run
+    A 140-line function mixing timing, logging, file writes and error
+    handling. Splitting it into prepare -> train -> evaluate -> predict ->
+    save makes each step testable and removes the manual run_timer
+    bookkeeping (a small context manager would do).
+
+
+4. SUGGESTED TARGET STRUCTURE
+-----------------------------
+
+  src/bert_hacking/
+    config.py      frozen dataclasses DatasetSpec, RunConfig
+                   (+ run_id = hash of the config fields)
+    data.py        load/sanitize, dichotomize, sample, split by ID,
+                   tokenize + chunk via datasets.map
+    train.py       set_seed, Trainer, predict, aggregate
+    regression.py  logit fit, error typing
+    io.py          results/<run_id>/{config.json, metrics.json, preds.csv}
+  cli.py           argparse: "train --config ... --subsample ...",
+                   "regress --workers N"
+
+With this layout, "already done" = results/<run_id>/metrics.json exists,
+workers never write to a shared file, and parallelizing both training
+and regression becomes simple. Expected size: ~1,000-1,200 lines instead
+of ~2,400.
+
+Suggested order: (1) bug fixes [this branch]; (2) config-derived run IDs
+and per-run result folders; (3) the refactor above.
+
+
+5. VERIFICATION OF THE FIXES
+----------------------------
+Run in the "berthacking" env (transformers 5.9, torch 2.12), with
+statsmodels stubbed out because it is not installed in that env:
+  - chunk_texts: all content tokens of a 30-token doc present in chunks
+    of length <= 12, [CLS]/[SEP] at the edges.
+  - cap_max_length: 512 / 512 / 512 / 8192 for BERT / RoBERTa /
+    DeBERTa-v2-xlarge / ModernBERT.
+  - LoopConfig: equal configs compare equal; comparison with a str or
+    int is False.
+  - Sampling: exactly 500 docs for N=500 with 3 strata (random and 0.25
+    balance) and without strata; explicit error on a one-class dataset.
+  - assess_errors: error_type_M is None for balanced gold labels, 0.5 in
+    a normal case.
+  - set_seed: classifier head identical across two loads when seeded,
+    different when not.
+Not tested: a full training run, and the regression scripts with real
+statsmodels (statsmodels is missing from the env: pip install -r
+requirements.txt).
