@@ -9,8 +9,13 @@ import numpy as np
 
 # Fixed for the whole study, recorded in every run
 CHUNK_OVERLAP = 50  # tokens shared by consecutive chunks of a long document
-AT_LEAST = 1        # a document is positive if at least AT_LEAST of its chunks are...
-THRESHOLD = None    # ...or, if set, if the share of positive chunks is >= THRESHOLD
+
+# How a document's prediction is derived from its chunks, depending on RunConfig.long_texts.
+# Both "chunk" rules come from the same trained model, so they are not RunConfig fields:
+#   any:   positive if any chunk has P(positive) >= 0.5
+#   mean:  positive if the mean P(positive) over its chunks is >= 0.5
+#   trunc: the model is trained and applied on the first window only
+POLICIES = {"chunk": ("any", "mean"), "truncate": ("trunc",)}
 
 
 @dataclass(frozen=True)
@@ -58,6 +63,7 @@ class RunConfig:
     weight_decay: float = 0.0
     batch_size: int = 8
     seed: int = 42
+    long_texts: str = "chunk"  # texts longer than the model's window: "chunk" or "truncate"
 
     def __post_init__(self):
         # Normalize JSON values (0 vs 0.0, list vs tuple, missing keys) so that equal
@@ -77,6 +83,8 @@ class RunConfig:
         }
         for key, value in normalized.items():
             object.__setattr__(self, key, value)
+        if self.long_texts not in POLICIES:
+            raise ValueError(f"long_texts must be one of {list(POLICIES)}, got {self.long_texts!r}")
         if len(self.splits_ratio) != 3 or sum(self.splits_ratio) != 100:
             raise ValueError(f"splits_ratio must be 3 ints summing to 100, got {self.splits_ratio}")
 

@@ -87,9 +87,12 @@ def _regress_run(run_id: str, gold_df: pd.DataFrame, spec, label: str, gold: dic
     predictions = pd.read_csv(storage.run_dir(run_id) / "predictions.csv", dtype={"ID": str})
     if set(predictions["ID"]) != set(gold_df["ID"]):
         raise ValueError(f"Run {run_id}: predicted IDs differ from the inference set")
-    df = gold_df.merge(predictions[["ID", "PRED-LABEL"]], on="ID")
-    records = [{"run_id": run_id, "dataset_name": spec.name, "dichotomization_label": label, **r}
-               for r in regress_run(df, label, spec.covariates, gold)]
+    records = []
+    for policy in predictions.columns.drop(["ID", "GS-LABEL"]):  # one column per policy
+        df = gold_df.merge(predictions[["ID", policy]].rename(columns={policy: "PRED-LABEL"}), on="ID")
+        records += [{"run_id": run_id, "dataset_name": spec.name, "dichotomization_label": label,
+                     "policy": policy, **r}
+                    for r in regress_run(df, label, spec.covariates, gold)]
     storage.write_json(storage.REGRESSIONS / f"{run_id}.json", records)
 
 

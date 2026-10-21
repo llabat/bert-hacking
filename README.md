@@ -34,6 +34,12 @@ bert-hacking sample-configs --space config_files/exploration-space-english.json 
 If `EMAIL_FROM`, `EMAIL_TO` and `EMAIL_FROM_PWD` are set (environment or `.env`),
 `train` and `regress` send an email when they stop.
 
+Texts longer than a model's window are chunked (`"long_texts": "chunk"`, default) or
+truncated (`"truncate"`); add `"long_texts": ["chunk", "truncate"]` to the grid to compare
+both. Chunk runs produce two document-level predictions, `any` (any chunk positive) and
+`mean` (mean probability ≥ 0.5); truncate runs produce `trunc`. Scores and regressions
+are reported per policy.
+
 A run is identified by a hash of its config (`RunConfig.run_id`), so it is done
 when `results/runs/<run_id>/run.json` exists; see `src/bert_hacking/storage.py`
 for the layout of `results/`. Logs go to `logs/bert-hacking.log`.

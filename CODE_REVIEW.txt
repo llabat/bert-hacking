@@ -123,7 +123,7 @@ before these fixes are not strictly comparable with results produced after.
 2. DESIGN CHOICES TO DISCUSS (NOT CHANGED)
 ------------------------------------------
 
-- Chunk aggregation uses AT_LEAST = 1: a document is predicted positive if
+- [Resolved in section 7] Chunk aggregation uses AT_LEAST = 1: a document is predicted positive if
   any one of its chunks is predicted positive. That systematically
   inflates predicted prevalence for long documents, which feeds directly
   into the regressions and the Type M error (which is defined on
@@ -305,3 +305,39 @@ What changed in behavior:
   - Removed: chunking.py (unused), calibration_loop.py and calibration/
     (stale format; "train --subsample" with a one-config file does the
     same), config.yml / example.yml (unused) and pyyaml.
+
+
+7. LONG TEXTS POLICY (decided after the review)
+-----------------------------------------------
+Rationale: the study is about plausible uses of these models for
+annotation, so each model uses its full context window, and the way
+texts longer than that window are handled is treated as a factor rather
+than a hidden choice. The "any chunk" rule is kept because it is used in
+practice by social scientists, alongside the more standard alternatives.
+
+  - RunConfig.long_texts: "chunk" (default) or "truncate". It changes the
+    trained model, so it is part of run_id.
+      chunk:    train on all chunks (document label on every chunk);
+      truncate: train and predict on the first window only (identical to
+                Hugging Face truncation=True).
+  - predict() saves P(positive) per chunk (P-POSITIVE column).
+  - Document-level predictions are derived per policy (config.POLICIES):
+      chunk runs    -> "any"  (any chunk with P >= 0.5)
+                       "mean" (mean P over chunks >= 0.5)
+      truncate runs -> "trunc"
+    Both chunk rules come from the same trained model, at no extra cost.
+    AT_LEAST / THRESHOLD are removed.
+  - run.json: score_on_test is a dict {policy: macro-F1}; "policies" lists
+    the policies of the run. predictions.csv / test.csv have one
+    predicted-label column per policy.
+  - Regression records carry a "policy" field; one file per run still.
+
+To include truncation in an experiment, add "long_texts": ["chunk",
+"truncate"] to the grid (and to the exploration space / subsample if a
+subsample is used: subsample entries without long_texts default to chunk).
+On datasets where no text exceeds the window, chunk and truncate runs
+train the same model; skipping that duplicate is not implemented.
+
+Checked on synthetic data: truncation == Hugging Face truncation at 512;
+any/mean/trunc rules on hand-computed cases; regress produces one record
+set per policy; predict runs with an untrained head. No training run.

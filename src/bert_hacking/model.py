@@ -17,7 +17,7 @@ from transformers import (
     set_seed,
 )
 
-from .config import AT_LEAST, THRESHOLD, RunConfig, Runtime
+from .config import RunConfig, Runtime
 
 
 def _f1_macro(output: EvalPrediction) -> dict:
@@ -70,39 +70,39 @@ def train(config: RunConfig, runtime: Runtime, train_ds: Dataset, eval_ds: Datas
 
 @torch.no_grad()
 def predict(model, ds: Dataset, tokenizer, batch_size: int) -> pd.DataFrame:
-    """Chunk-level predictions: ID, ID_CHUNK, GS-LABEL, PRED-LABEL."""
+    """Chunk-level predictions: ID, ID_CHUNK, GS-LABEL, P-POSITIVE (probability of label id 1)."""
     model.eval()
     if model.device.type == "cuda":
         model = model.to(torch.bfloat16)
     loader = DataLoader(ds.select_columns(["input_ids", "attention_mask"]), batch_size=batch_size,
                         collate_fn=DataCollatorWithPadding(tokenizer))
-    predicted = []
+    p_positive = []
     for batch in loader:
         logits = model(**batch.to(model.device)).logits
-        predicted += logits.argmax(dim=-1).tolist()
+        p_positive += logits.float().softmax(dim=-1)[:, 1].tolist()
     return pd.DataFrame({
         "ID": ds["ID"],
         "ID_CHUNK": ds["ID_CHUNK"],
         "GS-LABEL": ds["LABEL"],
-        "PRED-LABEL": [model.config.id2label[i] for i in predicted],
+        "P-POSITIVE": p_positive,
     })
 
 
-def aggregate(chunk_predictions: pd.DataFrame, label2id: dict[str, int]) -> pd.DataFrame:
-    """Document-level predictions (ID, GS-LABEL, PRED-LABEL), sorted by ID.
-
-    A document is positive if at least AT_LEAST of its chunks are, or, when THRESHOLD is
-    set, if the share of its positive chunks is >= THRESHOLD.
-    """
+def aggregate(chunk_predictions: pd.DataFrame, label2id: dict[str, int], policies: tuple[str, ...]) -> pd.DataFrame:
+    """Document-level predictions, sorted by ID: ID, GS-LABEL, and one predicted-label
+    column per policy (see config.POLICIES). Chunks must be in order within a document."""
     id2label = {i: name for name, i in label2id.items()}
-    by_doc = (chunk_predictions[["GS-LABEL", "PRED-LABEL"]].apply(lambda col: col.map(label2id))
-              .groupby(chunk_predictions["ID"]))
-    positive = by_doc.mean() >= THRESHOLD if THRESHOLD is not None else by_doc.sum() >= AT_LEAST
-    return positive.astype(int).apply(lambda col: col.map(id2label)).reset_index()
+    by_doc = chunk_predictions.groupby("ID")
+    p_positive = by_doc["P-POSITIVE"]
+    scores = {"any": p_positive.max(), "mean": p_positive.mean(), "trunc": p_positive.first()}
+    return pd.DataFrame({
+        "GS-LABEL": by_doc["GS-LABEL"].first(),
+        **{policy: (scores[policy] >= 0.5).astype(int).map(id2label) for policy in policies},
+    }).reset_index()
 
 
-def macro_f1(predictions: pd.DataFrame) -> float:
-    return f1_score(predictions["GS-LABEL"], predictions["PRED-LABEL"], average="macro", zero_division=np.nan)
+def macro_f1(predictions: pd.DataFrame, policy: str) -> float:
+    return f1_score(predictions["GS-LABEL"], predictions[policy], average="macro", zero_division=np.nan)
 
 
 def free_memory() -> None:

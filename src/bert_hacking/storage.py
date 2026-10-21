@@ -1,12 +1,12 @@
 """Result files. One folder per run, named after the config: a run is done when its run.json exists.
 
 results/
-  runs/<run_id>/run.json                 config, scores, timings, trainer logs
-  runs/<run_id>/predictions.csv          document-level predictions on the inference set
-  runs/<run_id>/predictions-chunks.csv   chunk-level predictions on the inference set
-  runs/<run_id>/test.csv                 document-level predictions on the test split
+  runs/<run_id>/run.json                 config, scores per policy, timings, trainer logs
+  runs/<run_id>/predictions.csv          inference set, per document: ID, GS-LABEL, one column per policy
+  runs/<run_id>/predictions-chunks.csv   inference set, per chunk: ID, ID_CHUNK, GS-LABEL, P-POSITIVE
+  runs/<run_id>/test.csv                 same two tables for the test split
   runs/<run_id>/test-chunks.csv
-  regressions/<run_id>.json              regressions on that run's predictions
+  regressions/<run_id>.json              regressions on that run's predictions, for each policy
   regressions/gold-<dataset>-<label>.json
 """
 import json

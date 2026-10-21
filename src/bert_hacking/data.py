@@ -121,8 +121,10 @@ def chunk(input_ids: list[int], length: int, overlap: int) -> list[list[int]]:
     return chunks
 
 
-def encode(df: pd.DataFrame, tokenizer, model_name: str, label2id: dict[str, int]) -> tuple[list[dict], int]:
-    """Tokenize texts, chunking them if any exceeds the model's window.
+def encode(df: pd.DataFrame, tokenizer, model_name: str, label2id: dict[str, int],
+           long_texts: str) -> tuple[list[dict], int]:
+    """Tokenize texts; texts longer than the model's window are chunked, or truncated
+    to their first window if long_texts == "truncate".
 
     Returns one record per chunk (ID, ID_CHUNK, LABEL, input_ids, attention_mask, labels)
     and the chunk length, i.e. min(longest text, model window).
@@ -131,7 +133,8 @@ def encode(df: pd.DataFrame, tokenizer, model_name: str, label2id: dict[str, int
     length = min(max(len(ids) for ids in encoded), max_length(tokenizer, model_name))
     records = []
     for doc_id, label, ids in zip(df["ID"], df["LABEL"], encoded):
-        for i, chunk_ids in enumerate(chunk(ids, length, CHUNK_OVERLAP)):
+        chunks = chunk(ids, length, CHUNK_OVERLAP)
+        for i, chunk_ids in enumerate(chunks[:1] if long_texts == "truncate" else chunks):
             records.append({
                 "ID": doc_id,
                 "ID_CHUNK": f"{doc_id}-{i}",
