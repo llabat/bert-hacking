@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForSequenceClassification,
     DataCollatorWithPadding,
+    EarlyStoppingCallback,
     EvalPrediction,
     Trainer,
     TrainingArguments,
@@ -50,6 +51,7 @@ def train(config: RunConfig, runtime: Runtime, train_ds: Dataset, eval_ds: Datas
         eval_strategy="epoch",
         logging_strategy="epoch",
         save_strategy="epoch",
+        save_only_model=True,  # checkpoints are only used to reload the best epoch, never to resume
         save_total_limit=2,
         load_best_model_at_end=True,
         metric_for_best_model="f1_macro",
@@ -63,8 +65,11 @@ def train(config: RunConfig, runtime: Runtime, train_ds: Dataset, eval_ds: Datas
         eval_dataset=eval_ds,
         data_collator=DataCollatorWithPadding(tokenizer),
         compute_metrics=_f1_macro,
+        callbacks=([EarlyStoppingCallback(config.early_stopping_patience)]
+                   if config.early_stopping_patience is not None else []),
     )
     trainer.train()
+    shutil.rmtree(runtime.output_dir, ignore_errors=True)  # best model is loaded in memory
     return trainer.model, trainer.state.log_history
 
 

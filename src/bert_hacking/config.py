@@ -64,6 +64,9 @@ class RunConfig:
     batch_size: int = 8
     seed: int = 42
     long_texts: str = "chunk"  # texts longer than the model's window: "chunk" or "truncate"
+    # Stop after this many epochs without eval macro-F1 improvement (None: always run n_epochs).
+    # The best epoch is kept either way, so this only matters if F1 would improve again later.
+    early_stopping_patience: int | None = 1
 
     def __post_init__(self):
         # Normalize JSON values (0 vs 0.0, list vs tuple, missing keys) so that equal
@@ -80,6 +83,8 @@ class RunConfig:
             "weight_decay": float(self.weight_decay),
             "batch_size": int(self.batch_size),
             "seed": int(self.seed),
+            "early_stopping_patience": (None if self.early_stopping_patience is None
+                                        else int(self.early_stopping_patience)),
         }
         for key, value in normalized.items():
             object.__setattr__(self, key, value)

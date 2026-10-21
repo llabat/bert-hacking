@@ -40,6 +40,9 @@ both. Chunk runs produce two document-level predictions, `any` (any chunk positi
 `mean` (mean probability ≥ 0.5); truncate runs produce `trunc`. Scores and regressions
 are reported per policy.
 
+Training stops early after `early_stopping_patience` epochs (default 1, `null` to disable)
+without eval macro-F1 improvement; the best epoch is kept.
+
 A run is identified by a hash of its config (`RunConfig.run_id`), so it is done
 when `results/runs/<run_id>/run.json` exists; see `src/bert_hacking/storage.py`
 for the layout of `results/`. Logs go to `logs/bert-hacking.log`.
