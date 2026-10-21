@@ -361,6 +361,13 @@ set per policy; predict runs with an untrained head. No training run.
   epochs when F1 does not improve; None runs all 6; checkpoints contain no
   optimizer/scheduler files.
 
+  - Prediction batches are sorted by length (longest first), then
+    results are put back in the original order: less padding, same
+    probabilities (checked: max difference 9e-8 vs unsorted).
+  - The tokenized inference set is cached in .cache/tokens/, keyed by a
+    hash of the model name and the texts (any change to the texts gives a
+    new key). Training samples are not cached: they differ between runs.
+
   Not done yet (see discussion): fp16 instead of bf16 on GPUs without
-  native bf16 (e.g. T4), larger device batches with OOM fallback, sorted
-  inference batches, cached inference tokenization, --shard i/n.
+  native bf16 (e.g. T4), larger device batches with OOM fallback,
+  --shard i/n.

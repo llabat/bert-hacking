@@ -1,4 +1,7 @@
 """Data preparation: loading, dichotomization, sampling, splitting, tokenization and chunking."""
+import hashlib
+import os
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +11,7 @@ from transformers import AutoConfig
 from .config import CHUNK_OVERLAP, DatasetSpec, RunConfig
 
 SAMPLE_CACHE = Path(".cache/samples")
+TOKENS_CACHE = Path(".cache/tokens")
 
 
 def load_texts(path: str, spec: DatasetSpec) -> pd.DataFrame:
@@ -121,15 +125,32 @@ def chunk(input_ids: list[int], length: int, overlap: int) -> list[list[int]]:
     return chunks
 
 
+def tokenize(texts: list[str], tokenizer, model_name: str, cache: bool = False) -> list[list[int]]:
+    """Token ids of each text, untruncated. With cache=True, the result is stored under a
+    hash of the model name and the texts, so any change to the texts invalidates it."""
+    if not cache:
+        return tokenizer(texts)["input_ids"]
+    digest = hashlib.sha256("\0".join([model_name, *texts]).encode()).hexdigest()[:16]
+    path = TOKENS_CACHE / f"{model_name.replace('/', '--')}-{digest}.pkl"
+    if path.exists():
+        return pickle.loads(path.read_bytes())
+    encoded = tokenizer(texts)["input_ids"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")  # atomic: concurrent runs may write the same file
+    tmp.write_bytes(pickle.dumps(encoded))
+    os.replace(tmp, path)
+    return encoded
+
+
 def encode(df: pd.DataFrame, tokenizer, model_name: str, label2id: dict[str, int],
-           long_texts: str) -> tuple[list[dict], int]:
+           long_texts: str, cache: bool = False) -> tuple[list[dict], int]:
     """Tokenize texts; texts longer than the model's window are chunked, or truncated
     to their first window if long_texts == "truncate".
 
     Returns one record per chunk (ID, ID_CHUNK, LABEL, input_ids, attention_mask, labels)
     and the chunk length, i.e. min(longest text, model window).
     """
-    encoded = tokenizer(df["TEXT"].tolist())["input_ids"]
+    encoded = tokenize(df["TEXT"].tolist(), tokenizer, model_name, cache)
     length = min(max(len(ids) for ids in encoded), max_length(tokenizer, model_name))
     records = []
     for doc_id, label, ids in zip(df["ID"], df["LABEL"], encoded):

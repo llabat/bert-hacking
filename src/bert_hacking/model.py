@@ -75,16 +75,23 @@ def train(config: RunConfig, runtime: Runtime, train_ds: Dataset, eval_ds: Datas
 
 @torch.no_grad()
 def predict(model, ds: Dataset, tokenizer, batch_size: int) -> pd.DataFrame:
-    """Chunk-level predictions: ID, ID_CHUNK, GS-LABEL, P-POSITIVE (probability of label id 1)."""
+    """Chunk-level predictions: ID, ID_CHUNK, GS-LABEL, P-POSITIVE (probability of label id 1),
+    in the order of `ds`."""
     model.eval()
     if model.device.type == "cuda":
         model = model.to(torch.bfloat16)
-    loader = DataLoader(ds.select_columns(["input_ids", "attention_mask"]), batch_size=batch_size,
-                        collate_fn=DataCollatorWithPadding(tokenizer))
-    p_positive = []
+    # Batch chunks of similar length together to minimize padding; longest first, so that
+    # an out-of-memory error happens on the first batch
+    order = np.argsort([-len(ids) for ids in ds["input_ids"]], kind="stable")
+    loader = DataLoader(ds.select(order).select_columns(["input_ids", "attention_mask"]),
+                        batch_size=batch_size, collate_fn=DataCollatorWithPadding(tokenizer))
+    p_positive = np.empty(len(ds))
+    start = 0
     for batch in loader:
         logits = model(**batch.to(model.device)).logits
-        p_positive += logits.float().softmax(dim=-1)[:, 1].tolist()
+        p = logits.float().softmax(dim=-1)[:, 1].cpu().numpy()
+        p_positive[order[start:start + len(p)]] = p
+        start += len(p)
     return pd.DataFrame({
         "ID": ds["ID"],
         "ID_CHUNK": ds["ID_CHUNK"],

@@ -51,8 +51,10 @@ def run(config: RunConfig, runtime: Runtime, train_df: pd.DataFrame, predict_df:
             log.info("Macro-F1 on test: %s", score)
 
         with _timed(timings, "prediction"):
+            # Cached: the inference set is the same for every run of a dataset x model
             records, predict_length = data.encode(data.dichotomize(predict_df, config.dichotomization_label),
-                                                  tokenizer, config.model_name, label2id, config.long_texts)
+                                                  tokenizer, config.model_name, label2id, config.long_texts,
+                                                  cache=True)
             chunks = model.predict(trained, _dataset(records, runtime), tokenizer, runtime.prediction_batch_size)
             predictions = model.aggregate(chunks, label2id, policies)
     finally:
