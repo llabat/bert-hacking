@@ -54,7 +54,7 @@ for the layout of `results/`. Logs go to `logs/bert-hacking.log`.
 | `model.py` | fine-tuning, prediction, chunk aggregation |
 | `pipeline.py` | one run, end to end |
 | `regression.py` | logit regressions and type I / II / S / M errors |
-| `storage.py` | result files |
+| `storage.py` | result files; `load_regressions()` gives one table of all regressions for analysis |
 | `cli.py` | commands above |
 
 ## Protocole expérimental

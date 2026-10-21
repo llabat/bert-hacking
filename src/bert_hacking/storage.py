@@ -12,9 +12,12 @@ results/
 import json
 import math
 import os
+from dataclasses import fields
 from pathlib import Path
 
 import pandas as pd
+
+from .config import RunConfig
 
 RUNS = Path("results/runs")
 REGRESSIONS = Path("results/regressions")
@@ -38,6 +41,32 @@ def save_run(record: dict, tables: dict[str, pd.DataFrame]) -> None:
 
 def load_runs() -> list[dict]:
     return [read_json(path) for path in sorted(RUNS.glob("*/run.json"))]
+
+
+def load_regressions() -> pd.DataFrame:
+    """One row per (run, policy, hypothesis): the run's config, its test macro-F1 for that
+    policy, the error flags (h_t, error_type_*) and the predicted-label regression
+    statistics, plus "task" (dataset-label) and "hypothesis" (covariate-value)."""
+    runs = {run["run_id"]: run for run in load_runs()}
+    rows = []
+    for path in sorted(REGRESSIONS.glob("*.json")):
+        if path.name.startswith("gold-"):
+            continue
+        for record in read_json(path):
+            run = runs[record["run_id"]]
+            rows.append({
+                **{field.name: run[field.name] for field in fields(RunConfig)},
+                **{k: v for k, v in record.items() if k not in ("errors", "pred_reg_results")},
+                **record.get("errors", {}),
+                **record.get("pred_reg_results", {}),
+                "score_on_test": run["score_on_test"][record["policy"]],
+                "time_run": sum(run["run_timer"].values()),
+            })
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["task"] = df["dataset_name"] + "-" + df["dichotomization_label"]
+        df["hypothesis"] = df["regression_col"] + "-" + df["regression_unique_value"].astype(str)
+    return df
 
 
 def read_json(path: Path):

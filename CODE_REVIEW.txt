@@ -371,3 +371,24 @@ set per policy; predict runs with an untrained head. No training run.
   Not done yet (see discussion): fp16 instead of bf16 on GPUs without
   native bf16 (e.g. T4), larger device batches with OOM fallback,
   --shard i/n.
+
+
+9. MERGE OF MAIN (PR #5, comments and hot fixes)
+-----------------------------------------------
+PR #5 was merged into main after these branches were created. Everything
+substantive in it was already covered here (ID_CHUNK fix, extra column
+check, removal of chunking.py and regression_loop_multiprocess.py) except:
+  - its new stratum size check was inverted (raised whenever a stratum had
+    more rows than requested, i.e. on every sample not already cached).
+    Replaced by the correct check when merging main into
+    fix/correctness-bugs;
+  - with OVERLAP/AT_LEAST/THRESHOLD now set in loop.py only,
+    calibration_loop.py and single_run.py's __main__ fail at aggregation
+    on main. Moot after the refactor, which removes both.
+The analysis notebook 2026-06-25-primo-analyse.ipynb read the old result
+format; it now loads storage.load_regressions(), groups by run_id instead
+of run_hash, filters on one long-text policy (POLICY = "mean") and has an
+extra cell comparing risks across policies. Its outputs were cleared: they
+came from pre-fix runs (saving_logs-dodgy.json) and remain in main's
+history. Checked by executing every cell on synthetic results (plotly
+stubbed; it is not in requirements.txt).
