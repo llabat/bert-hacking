@@ -2,19 +2,51 @@
 
 ## Setup
 
-Python version : 3.11
+Python 3.11. The code does not support multi-GPU.
 
-Code does not support multi-gpu.
-
-```bash 
+```bash
 conda create -n bert-hacking python=3.11 -y
 conda activate bert-hacking
-conda install pytorch 'transformers>=4.52.4' datasets pandas scikit-learn pyyaml 'accelerate>=1.1.0' tiktoken sentencepiece protobuf -y
+pip install -e .
 ```
 
-A minimal, configurable pipeline for fine-tuning BERT (and other Hugging Face transformers) on text classification tasks.
+## Usage
 
-This project focuses on **simplicity, reproducibility, and fast experimentation** and is based on Hugging Face classes.
+Run from the repo root (data paths in the config files are relative to it).
+
+```bash
+# Fine-tune + predict every config of the grid that is not done yet
+# (--subsample: only the grid configs listed in that file)
+bert-hacking train --config config_files/config-loop.json --subsample config_files/sample-configurations.json
+bert-hacking train --config config_files/config-loop.json --test-mode   # quick check, saves nothing
+
+# Regressions on every finished run not regressed yet
+bert-hacking regress --config config_files/config-loop.json --workers 5
+
+# Progress
+bert-hacking status --config config_files/config-loop.json --subsample config_files/sample-configurations.json
+
+# Regenerate the random subsample of the exploration space
+bert-hacking sample-configs --space config_files/exploration-space-english.json --out config_files/sample-configurations.json
+```
+
+`python -m bert_hacking ...` works too without installing (`PYTHONPATH=src`).
+If `EMAIL_FROM`, `EMAIL_TO` and `EMAIL_FROM_PWD` are set (environment or `.env`),
+`train` and `regress` send an email when they stop.
+
+A run is identified by a hash of its config (`RunConfig.run_id`), so it is done
+when `results/runs/<run_id>/run.json` exists; see `src/bert_hacking/storage.py`
+for the layout of `results/`. Logs go to `logs/bert-hacking.log`.
+
+| Module | Role |
+|---|---|
+| `config.py` | experiment file, `RunConfig` (hyperparameters), `Runtime` (batch sizes, test mode), fixed chunking constants |
+| `data.py` | loading, dichotomization, sampling, train/eval/test split, tokenization and chunking |
+| `model.py` | fine-tuning, prediction, chunk aggregation |
+| `pipeline.py` | one run, end to end |
+| `regression.py` | logit regressions and type I / II / S / M errors |
+| `storage.py` | result files |
+| `cli.py` | commands above |
 
 ## Protocole expérimental
 

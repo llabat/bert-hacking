@@ -4,6 +4,10 @@ Date: 2026-10-21
 Scope: src/ (single_run, loop, regression loops, toolbox/*), config_files/
 Branch with fixes: fix/correctness-bugs
 
+NOTE: file paths and line numbers below refer to the pre-refactor layout
+(commit c742b74, src/toolbox/...). Sections 3 and 4 were implemented on
+branch refactor/bert-hacking-package (see section 6).
+
 
 SUMMARY
 -------
@@ -257,3 +261,47 @@ statsmodels stubbed out because it is not installed in that env:
 Not tested: a full training run, and the regression scripts with real
 statsmodels (statsmodels is missing from the env: pip install -r
 requirements.txt).
+
+
+6. REFACTOR (branch refactor/bert-hacking-package)
+--------------------------------------------------
+src/toolbox and the six scripts are replaced by the package
+src/bert_hacking (config, data, model, pipeline, regression, storage, cli)
+and one command: bert-hacking {train, regress, status, sample-configs}.
+~2,400 -> ~800 lines of Python.
+
+Results are unchanged with respect to the fixed code (c742b74). Checked
+on synthetic data against that commit:
+  - sampled IDs identical on 48 configs (balance random/0.25/0.5/0.75,
+    with and without year strata, 2 labels, 2 seeds), including the
+    cases where both raise for lack of positives;
+  - chunk records and train/eval/test splits identical (IDs, chunk IDs,
+    token ids, labels) for BERT and RoBERTa, two splits_ratio/seeds;
+  - chunk -> document aggregation identical;
+  - regressions and I/II/S/M errors identical (except the payload of a
+    failed regression, now {"success": false, "error": ...});
+  - sample-configs reproduces config_files/sample-configurations.json
+    exactly from config_files/exploration-space-english.json.
+Not run: a full training run, and a comparison of the subsample
+selection against the old in_subsample filter (too slow with the old code).
+
+What changed in behavior:
+  - Padding is per batch (DataCollatorWithPadding) instead of to the
+    global max length: same results up to floating-point noise, less
+    compute.
+  - The best model is taken from the Trainer (load_best_model_at_end)
+    instead of reloaded from its checkpoint: same weights.
+  - Run IDs are config hashes; results live in results/runs/<run_id>/ and
+    results/regressions/<run_id>.json (one file per run, atomic writes)
+    instead of saving_logs.json / errors_save.json / predictions_save/.
+    Old results are not migrated (they predate the fixes anyway).
+  - The regression step reads gold labels from the inference CSV instead
+    of from each run's predictions (same values), fits the gold
+    regressions once per dataset x label, and saves them to
+    results/regressions/gold-<dataset>-<label>.json.
+  - Regression records get "run_id" instead of "prediction-filepath".
+  - Numeric metadata values (e.g. year) no longer break JSON writing.
+  - --config takes a path, not a file name inside config_files/.
+  - Removed: chunking.py (unused), calibration_loop.py and calibration/
+    (stale format; "train --subsample" with a one-config file does the
+    same), config.yml / example.yml (unused) and pyyaml.
