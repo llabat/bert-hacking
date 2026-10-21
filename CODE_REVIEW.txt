@@ -1,0 +1,496 @@
+BERT-HACKING CODE REVIEW
+========================
+Date: 2026-10-21
+Scope: src/ (single_run, loop, regression loops, toolbox/*), config_files/
+Branch with fixes: fix/correctness-bugs
+
+NOTE: file paths and line numbers below refer to the pre-refactor layout
+(commit c742b74, src/toolbox/...). Sections 3 and 4 were implemented on
+branch refactor/bert-hacking-package (see section 6).
+
+
+SUMMARY
+-------
+The pipeline works end to end for BERT on the ideology_news setup, but:
+  - several bugs affect the validity or reproducibility of results
+    (section 1, all fixed on this branch);
+  - the design makes the code about twice as long as it needs to be,
+    slow at the scale of the planned grid (~11k configs per task), and
+    fragile to interruptions (section 3).
+
+Fixes 1, 2, 5, 9 and 10 below change the outputs of a run. Results produced
+before these fixes are not strictly comparable with results produced after.
+
+
+1. BUGS (FIXED ON THIS BRANCH)
+------------------------------
+
+[1] Training was not reproducible (single_run.py)
+    The model was instantiated before the Trainer, and Trainer.__init__ is
+    what calls set_seed(). The randomly initialized classification head
+    therefore differed on every run, despite the protocol stating that the
+    whole procedure is seeded. Verified: two loads of bert-base-uncased
+    give different classifier weights without set_seed, identical with it.
+    Fix: transformers.set_seed(loop_config.seed) right before from_pretrained.
+    Impact: every model trained before this fix had an unseeded head.
+
+[2] Wrong context window: crash for RoBERTa/XLM-R (preprocess.py, cap_max_length)
+    The maximum length was max_position_embeddings - 1. For RoBERTa-like
+    models that is 513, but only 512 tokens are usable (positions are offset
+    by padding_idx + 1). Any document longer than 512 tokens leads to an
+    index error on GPU. For BERT the value was 511 instead of 512.
+    Fix: min(tokenizer.model_max_length, max_position_embeddings).
+    deberta-v2's tokenizer reports a huge model_max_length (unset), hence
+    the min. Values now: BERT 512, RoBERTa 512, DeBERTa-v2 512,
+    ModernBERT 8192.
+    Impact: BERT runs now use 512-token chunks instead of 511.
+    Note: with ModernBERT every document is padded to the longest sampled
+    document (up to 8192 tokens). That is costly in memory; consider an
+    explicit cap.
+
+[3] Type M error: division by zero (regression.py, assess_errors)
+    The Type M error divides by gold_delta = |P(gold=1) - P(gold=0)|, which
+    is 0 when gold labels are perfectly balanced.
+    Fix: error_type_M = None in that case.
+    CORRECTION TO THE INITIAL REVIEW: I first reported that Type M should be
+    computed on regression coefficients rather than on label prevalence.
+    PROTOCOLE_EXP.md (section "Type M Risk") explicitly defines it on label
+    prevalence, |delta_pred - delta_GS| / delta_GS, and the code matches.
+    Whether this matches the definition in the LLM Hacking paper (which
+    describes M errors as effect-size exaggeration) is worth discussing
+    with the team, but the code is not wrong with respect to the protocol.
+    Note: the formula in PROTOCOLE_EXP.md:105 says "GS_coef * pred_coef < 0"
+    for M; the code and the demo snippet use "> 0" (same sign), which is the
+    consistent one. The line at :105 is a typo.
+
+[4] regression_loop_multiprocess.py wrote garbage and crashed (utils.save_errors)
+    save_errors(hashes: list, to_save: list) was called with a single hash
+    string and a single dict. zip() then paired the characters of the hash
+    with the keys of the dict. Also, results/errors_save.json was never
+    created, so the script failed on its first read. And
+    regression_already_done re-read the entire JSON for each regression
+    (quadratic cost).
+    Fix: results are collected per run and saved in one call; a missing
+    file is treated as empty (load_errors_save); already-done hashes are
+    loaded once into a set.
+
+[5] Chunking dropped the last token of every long document (preprocess.py, chunk_texts)
+    Off-by-one: index_max was N_tokens - 2, but the slices are end-exclusive,
+    so the last content token was never included in any chunk.
+    Fix: index_max = N_tokens - 1 (index of [SEP]). Checked on a synthetic
+    document: all content tokens now appear in at least one chunk.
+
+[6] ID_CHUNK column was a copy of ID (model.py, predict)
+    ID_chunk_ += batch["ID"]  ->  batch["ID_CHUNK"].
+    Did not affect aggregated predictions (which group by ID), only the
+    saved chunk-level CSVs.
+
+[7] LoopConfig.__eq__ returned an exception instead of raising it
+    "return TypeError(...)" returns a truthy object, so comparing a
+    LoopConfig with anything else evaluated as equal.
+    Fix: return NotImplemented (standard Python protocol).
+
+[8] Training errors were swallowed (model.py, train_model)
+    Every exception was caught and printed, and the function returned None.
+    The failure then surfaced later as a confusing from_pretrained(None)
+    error. If Trainer() itself failed, "del trainer" raised
+    UnboundLocalError and hid the original error.
+    Fix: errors propagate to single_run, which already catches and logs
+    them; the ERRORS log now contains the full traceback.
+
+[9] Sampling edge cases (preprocess.py, _sample_N_documents_by_their_ID)
+    - N_per_strata = int(N / n_strata) truncated, so stratified samples
+      had fewer than N_annotated documents (e.g. 500 over 3 years -> 498).
+      Fix: the remainder is spread over the first strata; exactly
+      N_annotated rows are now sampled.
+    - A stratum with fewer rows than requested crashed inside rng.choice;
+      it now raises an explicit error.
+    - With balance != "random", running out of positives or negatives in a
+      stratum caused a division by zero (NaN probabilities). It now raises
+      an explicit error.
+    The sample cache filename gets a "-v2" suffix so stale caches are not
+    reused. Non-stratified samples are unchanged by this fix.
+
+[10] Train/eval/test splits were not reproducible (preprocess.py, split_ds)
+    The unique IDs were shuffled from list(set(ids)). The iteration order of
+    a set of strings depends on PYTHONHASHSEED, which Python randomizes for
+    every process, so the same seed gave different splits across runs.
+    Verified: same IDs, random_state=42, PYTHONHASHSEED=1 vs 2 -> different
+    orders. Fix: sorted(set(ids)) before shuffling.
+    Impact: every split made before this fix depended on the process.
+
+
+2. DESIGN CHOICES TO DISCUSS (NOT CHANGED)
+------------------------------------------
+
+- [Resolved in section 7] Chunk aggregation uses AT_LEAST = 1: a document is predicted positive if
+  any one of its chunks is predicted positive. That systematically
+  inflates predicted prevalence for long documents, which feeds directly
+  into the regressions and the Type M error (which is defined on
+  prevalence). A threshold on the mean (THRESHOLD = 0.5) or averaging
+  logits is more neutral.
+- Sampling draws documents one by one, so the number of positives follows
+  Binomial(N, balance) rather than being exactly round(balance * N). It is
+  also O(N^2) in pandas. Sampling an exact count would be simpler and
+  faster, but it would change the samples compared with existing runs.
+- During training, the eval split is scored at chunk level, while the test
+  split is scored at document level after aggregation.
+- In regression_loop*.py, if a metadata column is numeric (e.g. year),
+  regression_unique_value is a numpy int and json.dump will fail. This is
+  not an issue with the current columns (topic, source).
+
+
+3. DESIGN / CODE QUALITY
+------------------------
+
+3.1 Run identity and result storage
+    - Run IDs hash time(), so the same config gets a new ID every time.
+      As a result, already_done() and in_subsample() rebuild a LoopConfig
+      for every saved/subsampled entry on every iteration: with 11,520
+      configs and a 960-entry subsample, that is ~11M object constructions
+      just to decide what to run. Hashing the config itself makes
+      "already done" a file-existence check, and iterating over the
+      subsample directly removes the filter.
+    - saving_logs.json and errors_save.json are fully re-read and
+      re-written after every run. A crash mid-write corrupts them, cost
+      grows quadratically, and they cannot be shared between parallel
+      workers. One file per run (results/<run_id>/...) or an append-only
+      JSONL file avoids all three problems.
+
+3.2 Configuration
+    - LoopConfig is ~150 lines of hand-written coercion, defaults,
+      equality and to_dict that a frozen @dataclass gives in ~20 lines.
+    - It mixes configuration with runtime state (label2id, id2label,
+      OVERLAP, AT_LEAST, THRESHOLD are set later by other code), so the
+      same object means different things at different points of a run.
+    - get_config validates the JSON with ~50 lines of manual checks;
+      a dataclass or pydantic schema does that declaratively.
+    - OVERLAP / AT_LEAST / THRESHOLD are module constants in single_run.py,
+      TEST_MODE / DEVICE_BATCH_SIZE are constants in loop.py: run
+      parameters are split across code and config files.
+
+3.3 Package structure
+    - Importing toolbox creates 8 directories in the current working
+      directory (side effect at import).
+    - Paths ("./results", "./.cache", "./config_files", ...) are hardcoded
+      everywhere: scripts only work when run from the repo root.
+    - Intra-package imports ("from . import LoopConfig, load_tokenizer")
+      only work because of the order of lines in __init__.py.
+
+3.4 Preprocessing
+    - Data goes DataFrame -> dict[ID -> dict] -> Dataset, the full training
+      set is tokenized and cached as one large JSON, and every sequence is
+      padded to the global max length.
+      datasets.map(tokenizer, truncation=True, return_overflowing_tokens=True,
+      stride=OVERLAP) + DataCollatorWithPadding would replace chunk_texts,
+      pad_texts, join_tokenized_texts, format_labels and the JSON token
+      cache (~150 lines), and pad per batch instead of globally.
+    - split_ds checks membership with "d['ID'] in ids_train.values" (linear
+      scan per document) and calls N_documents.popitem(), which mutates the
+      caller's dict just to peek at one element.
+
+3.5 Reimplemented standard tools
+    - CustomLogger -> logging module (it reopens the file and lists the
+      directory on every message).
+    - getopt -> argparse.
+    - ensure_no_na -> pandas to_json / a JSON encoder.
+    - np.array([...]).all() / np.isin(a, b).all() for plain Python
+      collections -> all(...) / set(a) <= set(b).
+    - perform_regression returns a 15-key dict of None on failure; a
+      {"success": False, "error": str(e)} is enough.
+
+3.6 Duplicated and dead code
+    - regression_loop.py and regression_loop_multiprocess.py do the same
+      thing and write different output formats (results/regressions/*.json
+      vs results/errors_save.json). Keep one.
+    - chunking.py runs a script with hardcoded paths at import time and is
+      not used by the pipeline (it implements a different, word-based
+      chunking).
+    - config_files/config.yml and example.yml are not read by anything;
+      pyyaml is then an unused dependency.
+    - single_run_dummy, the TODELETE comment blocks, and
+      "if len(model.exog_names) == 1: pass" in regression.py.
+    - calibration_loop.py moves files with os.system("mv ...").
+
+3.7 single_run
+    A 140-line function mixing timing, logging, file writes and error
+    handling. Splitting it into prepare -> train -> evaluate -> predict ->
+    save makes each step testable and removes the manual run_timer
+    bookkeeping (a small context manager would do).
+
+
+4. SUGGESTED TARGET STRUCTURE
+-----------------------------
+
+  src/bert_hacking/
+    config.py      frozen dataclasses DatasetSpec, RunConfig
+                   (+ run_id = hash of the config fields)
+    data.py        load/sanitize, dichotomize, sample, split by ID,
+                   tokenize + chunk via datasets.map
+    train.py       set_seed, Trainer, predict, aggregate
+    regression.py  logit fit, error typing
+    io.py          results/<run_id>/{config.json, metrics.json, preds.csv}
+  cli.py           argparse: "train --config ... --subsample ...",
+                   "regress --workers N"
+
+With this layout, "already done" = results/<run_id>/metrics.json exists,
+workers never write to a shared file, and parallelizing both training
+and regression becomes simple. Expected size: ~1,000-1,200 lines instead
+of ~2,400.
+
+Suggested order: (1) bug fixes [this branch]; (2) config-derived run IDs
+and per-run result folders; (3) the refactor above.
+
+
+5. VERIFICATION OF THE FIXES
+----------------------------
+Run in the "berthacking" env (transformers 5.9, torch 2.12), with
+statsmodels stubbed out because it is not installed in that env:
+  - chunk_texts: all content tokens of a 30-token doc present in chunks
+    of length <= 12, [CLS]/[SEP] at the edges.
+  - cap_max_length: 512 / 512 / 512 / 8192 for BERT / RoBERTa /
+    DeBERTa-v2-xlarge / ModernBERT.
+  - LoopConfig: equal configs compare equal; comparison with a str or
+    int is False.
+  - Sampling: exactly 500 docs for N=500 with 3 strata (random and 0.25
+    balance) and without strata; explicit error on a one-class dataset.
+  - assess_errors: error_type_M is None for balanced gold labels, 0.5 in
+    a normal case.
+  - set_seed: classifier head identical across two loads when seeded,
+    different when not.
+Not tested: a full training run, and the regression scripts with real
+statsmodels (statsmodels is missing from the env: pip install -r
+requirements.txt).
+
+
+6. REFACTOR (branch refactor/bert-hacking-package)
+--------------------------------------------------
+src/toolbox and the six scripts are replaced by the package
+src/bert_hacking (config, data, model, pipeline, regression, storage, cli)
+and one command: bert-hacking {train, regress, status, sample-configs}.
+~2,400 -> ~800 lines of Python.
+
+Results are unchanged with respect to the fixed code (c742b74). Checked
+on synthetic data against that commit:
+  - sampled IDs identical on 48 configs (balance random/0.25/0.5/0.75,
+    with and without year strata, 2 labels, 2 seeds), including the
+    cases where both raise for lack of positives;
+  - chunk records and train/eval/test splits identical (IDs, chunk IDs,
+    token ids, labels) for BERT and RoBERTa, two splits_ratio/seeds;
+  - chunk -> document aggregation identical;
+  - regressions and I/II/S/M errors identical (except the payload of a
+    failed regression, now {"success": false, "error": ...});
+  - sample-configs reproduces config_files/sample-configurations.json
+    exactly from config_files/exploration-space-english.json.
+Not run: a full training run, and a comparison of the subsample
+selection against the old in_subsample filter (too slow with the old code).
+
+What changed in behavior:
+  - Padding is per batch (DataCollatorWithPadding) instead of to the
+    global max length: same results up to floating-point noise, less
+    compute.
+  - The best model is taken from the Trainer (load_best_model_at_end)
+    instead of reloaded from its checkpoint: same weights.
+  - Run IDs are config hashes; results live in results/runs/<run_id>/ and
+    results/regressions/<run_id>.json (one file per run, atomic writes)
+    instead of saving_logs.json / errors_save.json / predictions_save/.
+    Old results are not migrated (they predate the fixes anyway).
+  - The regression step reads gold labels from the inference CSV instead
+    of from each run's predictions (same values), fits the gold
+    regressions once per dataset x label, and saves them to
+    results/regressions/gold-<dataset>-<label>.json.
+  - Regression records get "run_id" instead of "prediction-filepath".
+  - Numeric metadata values (e.g. year) no longer break JSON writing.
+  - --config takes a path, not a file name inside config_files/.
+  - Removed: chunking.py (unused), calibration_loop.py and calibration/
+    (stale format; "train --subsample" with a one-config file does the
+    same), config.yml / example.yml (unused) and pyyaml.
+
+
+7. LONG TEXTS POLICY (decided after the review)
+-----------------------------------------------
+Rationale: the study is about plausible uses of these models for
+annotation, so each model uses its full context window, and the way
+texts longer than that window are handled is treated as a factor rather
+than a hidden choice. The "any chunk" rule is kept because it is used in
+practice by social scientists, alongside the more standard alternatives.
+
+  - RunConfig.long_texts: "chunk" (default) or "truncate". It changes the
+    trained model, so it is part of run_id.
+      chunk:    train on all chunks (document label on every chunk);
+      truncate: train and predict on the first window only (identical to
+                Hugging Face truncation=True).
+  - predict() saves P(positive) per chunk (P-POSITIVE column).
+  - Document-level predictions are derived per policy (config.POLICIES):
+      chunk runs    -> "any"  (any chunk with P >= 0.5)
+                       "mean" (mean P over chunks >= 0.5)
+      truncate runs -> "trunc"
+    Both chunk rules come from the same trained model, at no extra cost.
+    AT_LEAST / THRESHOLD are removed.
+  - run.json: score_on_test is a dict {policy: macro-F1}; "policies" lists
+    the policies of the run. predictions.csv / test.csv have one
+    predicted-label column per policy.
+  - Regression records carry a "policy" field; one file per run still.
+
+To include truncation in an experiment, add "long_texts": ["chunk",
+"truncate"] to the grid (and to the exploration space / subsample if a
+subsample is used: subsample entries without long_texts default to chunk).
+On datasets where no text exceeds the window, chunk and truncate runs
+train the same model; skipping that duplicate is not implemented.
+
+Checked on synthetic data: truncation == Hugging Face truncation at 512;
+any/mean/trunc rules on hand-computed cases; regress produces one record
+set per policy; predict runs with an untrained head. No training run.
+
+
+8. TRAINING SPEED AND EARLY STOPPING
+------------------------------------
+  - save_only_model=True: checkpoints hold the weights only. By default
+    the Trainer also saves the AdamW state (2x the model size), the
+    scheduler and RNG states, which are only needed to resume training;
+    this pipeline never resumes. bert-base: ~1.3 GB -> ~440 MB per epoch.
+    The checkpoint folder is deleted once the best model is in memory.
+  - RunConfig.early_stopping_patience (default 1, None to disable; part of
+    run_id): stop after that many epochs without eval macro-F1
+    improvement. The weights at each epoch are unchanged (the LR schedule
+    still spans n_epochs) and the best epoch is kept, so the result only
+    differs from a full run when F1 would improve again after the
+    plateau. Note that eval splits are small (10-15% of N_annotated, i.e.
+    50-300 documents), so eval F1 is noisy and patience 1 may stop early.
+  Checked with a 2-layer BERT on CPU: patience 1 stops after 2 of 6
+  epochs when F1 does not improve; None runs all 6; checkpoints contain no
+  optimizer/scheduler files.
+
+  - Prediction batches are sorted by length (longest first), then
+    results are put back in the original order: less padding, same
+    probabilities (checked: max difference 9e-8 vs unsorted).
+  - The tokenized inference set is cached in .cache/tokens/, keyed by a
+    hash of the model name and the texts (any change to the texts gives a
+    new key). Training samples are not cached: they differ between runs.
+
+  Not done yet (see discussion): fp16 instead of bf16 on GPUs without
+  native bf16 (e.g. T4), larger device batches with OOM fallback,
+  --shard i/n.
+
+
+9. MERGE OF MAIN (PR #5, comments and hot fixes)
+-----------------------------------------------
+PR #5 was merged into main after these branches were created. Everything
+substantive in it was already covered here (ID_CHUNK fix, extra column
+check, removal of chunking.py and regression_loop_multiprocess.py) except:
+  - its new stratum size check was inverted (raised whenever a stratum had
+    more rows than requested, i.e. on every sample not already cached).
+    Replaced by the correct check when merging main into
+    fix/correctness-bugs;
+  - with OVERLAP/AT_LEAST/THRESHOLD now set in loop.py only,
+    calibration_loop.py and single_run.py's __main__ fail at aggregation
+    on main. Moot after the refactor, which removes both.
+The analysis notebook 2026-06-25-primo-analyse.ipynb read the old result
+format; it now loads storage.load_regressions(), groups by run_id instead
+of run_hash, filters on one long-text policy (POLICY = "mean") and has an
+extra cell comparing risks across policies. Its outputs were cleared: they
+came from pre-fix runs (saving_logs-dodgy.json) and remain in main's
+history. Checked by executing every cell on synthetic results (plotly
+stubbed; it is not in requirements.txt).
+
+
+10. INFERENCE ON THE FULL CORPUS
+--------------------------------
+Design decision: no held-out inference set. Each run annotates (samples)
+N_annotated documents of the corpus, trains on them, and predicts the
+rest of the corpus; regressions use the whole corpus, with gold labels
+for the run's annotated documents and predicted labels for the others,
+as a researcher would. The gold regressions are therefore identical for
+every run. The previous held-out design (README / PROTOCOLE_EXP.md, and
+the ideology_news config with separate training / inference files) is
+abandoned; ideology_news must switch to its full corpus to be comparable.
+
+  - pipeline: inference documents that were annotated for the run keep
+    their gold label and are not predicted; predictions.csv gets an
+    ANNOTATED column; run.json gets n_annotated_in_inference. With
+    separate, disjoint files nothing changes.
+  - regression: hypotheses are covariate values with at least
+    min-hypothesis-size documents (new dataset option, default 0), most
+    frequent first; missing values are never tested. Run regressions use
+    the hypotheses of the gold regressions.
+  - misinfo (config_files/config-misinfo.json, data/misinfo-full.csv):
+    train + val + test of Misinfo Reaction Frames (24,490 headlines; the
+    two cancer files are not included), ID = <split>-<row>, year from
+    date ("unknown" if missing), source names cleaned (lowercase; single-
+    platform variants such as "Facebook posts", "FB users" -> facebook;
+    raw values kept in source_raw). Covariate: source, min 100 headlines
+    -> 47 hypotheses covering 67% of headlines. Positive label: misinfo.
+    Stratified sampling on type (year strata too small for N >= 1000).
+  Checked end to end on the full misinfo corpus with a 2-layer BERT on CPU:
+  60 annotated headlines keep gold labels, 24,430 predicted, 47 gold and
+  2 x 47 predicted regressions fitted.
+
+
+11. ONE CORPUS FILE PER DATASET
+-------------------------------
+With inference on the full corpus, the three paths of a dataset entry
+(filepath-train / -predict / -metadata) always pointed to the same data.
+A dataset is now one CSV ("filepath"): ID, text and label columns (no
+missing values) plus metadata columns, all kept. Covariates may have
+missing values (never tested); stratification columns may not (checked
+when sampling). extra_cols_to_keep is gone. The old keys raise an error
+pointing to the README, which now documents the dataset requirements.
+Dataset preparation stays outside the pipeline.
+  - Binary covariates without missing values are tested once (their two
+    values are the same hypothesis with the sign flipped), like binary
+    labels.
+  - config-misinfo.json: covariates source (>= 100 headlines) and type
+    (climate / covid) -> 48 hypotheses.
+  - config-loop.json (ideology_news) now points to ideology_news-full.csv,
+    read with "," as the old code did for that file. Not verified: the
+    file must contain the text (content), label (bias_text), topic,
+    source and, for the stratified grid entries, year columns.
+  Checked end to end on the full misinfo corpus (2-layer BERT, CPU).
+
+
+12. RUNNING ON THE SLURM CLUSTER, FIRST GPU RUN
+-----------------------------------------------
+  - train refuses to start with more than one visible GPU: the Trainer
+    would split batches over them and silently multiply the batch size.
+  - --shard i/n: job i of n runs the configs whose run_id hash is i mod n
+    (stable as runs complete). scripts/train.sbatch runs one shard per
+    array task (sbatch --array=0-7 scripts/train.sbatch CONFIG).
+  - Checkpoints go to models/<run_id> (concurrent jobs no longer share
+    models/current); the sample cache is written atomically.
+  - scripts/smoke_test.sbatch + config_files/smoke-test.json: one real run
+    and its regressions on one GPU, failing fast if CUDA is unusable.
+  - requirements.txt read "statsmodelstqdm" (missing newline when adding
+    tqdm), so pip install -e . failed. Fixed.
+
+First run (RTX A6000, misinfo, bert-base, N=500): ~60 s per run (44 s
+training, 24k headlines predicted in ~5 s), regressions ~20 s.
+
+BUG found by that run, fixed: the best epoch was not fully restored.
+transformers 5.x saves BERT checkpoints with legacy LayerNorm names
+(gamma / beta); the Trainer's load_best_model_at_end reloads them by
+name and silently skipped all 50 LayerNorm tensors, which kept the last
+epoch's values. With early stopping the last epoch is never the best, so
+nearly every run was affected. Fix: a callback keeps the best epoch's
+weights in memory and implements early stopping; no checkpoint is saved
+or reloaded. Checked: the returned model equals the best epoch's weights
+exactly (all tensors), with and without early stopping. The smoke-test
+run made before the fix was moved to results/invalid-layernorm-reload/.
+
+Also checked: gradient accumulation is correct (SGD update with 4x4
+accumulation = one batch of 16, ratio 1.002); the logged train_loss is
+summed over accumulation steps (reporting only).
+
+Later fixes from the cluster runs:
+  - torch reinstalled as 2.12.0+cu126 (was +cu130): CUDA 13 builds need a
+    recent driver and some nodes run 525 (CUDA 12.0); 12.x builds run on
+    any driver >= 525.60.
+  - smoke_test.sbatch creates a CUDA context in its GPU check, so a GPU
+    already held by another process (exclusive mode) fails the job at once;
+    train stops the job on torch.AcceleratorError instead of failing every
+    run of its shard.
+  - early_stopping_patience default 1 -> 2: on the first good GPU run, eval
+    F1 tied (0.694, 0.694) on a 50-document eval split and patience 1 stopped
+    training after 2 epochs.
+  - On Turing GPUs (Titan RTX) bf16 is emulated but fast enough (~30 s per
+    misinfo run); kept so that runs on Ampere and Turing use the same
+    precision.

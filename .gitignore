@@ -2,8 +2,7 @@
 **/__pycache__/
 data/
 models/
-custom_logs/
-predictions_save/
+logs/
 **/libs
 **/__*
 *.html
@@ -13,3 +12,4 @@ predictions_save/
 results/
 predictions_save_onyxia
 **/.ipynb_checkpoints
+*.egg-info/
