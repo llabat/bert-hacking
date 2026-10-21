@@ -63,8 +63,7 @@ def train_model(
     dsd : DatasetDict,
     loop_config: LoopConfig,
 ) -> tuple[str, dict] :
-    """
-    """
+    """Select the device, format de dataset and launch training"""
     # Errors propagate to single_run, which logs them; swallowing them here only
     # led to a confusing from_pretrained(None) failure later on.
     trainer = None
@@ -93,6 +92,9 @@ def train_model(
     return output, trainer_logs
 
 def predict(model, ds : Dataset, loop_config: LoopConfig)->pd.DataFrame:
+    """Use model for prediction using bf16. Return dataframe with ID or ID_CHUNK 
+    as index."""
+    
     if "input_ids" not in ds.features:
         raise ValueError("Please tokenize texts first")
     if "attention_mask" not in ds.features:
@@ -133,7 +135,7 @@ def predict(model, ds : Dataset, loop_config: LoopConfig)->pd.DataFrame:
             "ID_CHUNK":ID_chunk_, 
             "GS-LABEL":GS_, 
             "PRED-LABEL":PRED_
-        }).set_index("ID")
+        }).set_index("ID_CHUNK")
     
     return pd.DataFrame({
         "ID": ID_, 
