@@ -8,4 +8,5 @@ tiktoken
 sentencepiece
 protobuf
 python-dotenv
-statsmodelstqdm
+statsmodels
+tqdm

@@ -11,9 +11,9 @@ from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForSequenceClassification,
     DataCollatorWithPadding,
-    EarlyStoppingCallback,
     EvalPrediction,
     Trainer,
+    TrainerCallback,
     TrainingArguments,
     set_seed,
 )
@@ -26,9 +26,33 @@ def _f1_macro(output: EvalPrediction) -> dict:
     return {"f1_macro": f1_score(output.label_ids, logits.argmax(axis=1), average="macro", zero_division=0)}
 
 
+class _KeepBestEpoch(TrainerCallback):
+    """Keep the weights of the best epoch (eval macro-F1) in memory, and stop training after
+    `patience` epochs without improvement (None: never stop early).
+
+    Replaces the Trainer's load_best_model_at_end, which reloads the best checkpoint from disk:
+    in transformers 5.x, BERT checkpoints store LayerNorm weights under their legacy names
+    (gamma / beta) and that reload silently skips them."""
+
+    def __init__(self, patience: int | None):
+        self.patience = patience
+        self.best_score, self.best_weights, self.epochs_without_improvement = None, None, 0
+
+    def on_evaluate(self, args, state, control, metrics=None, model=None, **kwargs):
+        score = metrics["eval_f1_macro"]
+        if self.best_score is None or score > self.best_score:
+            self.best_score, self.epochs_without_improvement = score, 0
+            self.best_weights = {k: v.detach().to("cpu", copy=True) for k, v in model.state_dict().items()}
+        else:
+            self.epochs_without_improvement += 1
+            if self.patience is not None and self.epochs_without_improvement >= self.patience:
+                control.should_training_stop = True
+
+
 def train(config: RunConfig, runtime: Runtime, train_ds: Dataset, eval_ds: Dataset,
           tokenizer, label2id: dict[str, int]) -> tuple[torch.nn.Module, list[dict]]:
     """Fine-tune and return the best model (on eval macro-F1) and the trainer's log history."""
+    output_dir = f"{runtime.checkpoints_dir}/{config.run_id}"  # per run: jobs may run concurrently
     # Seed before instantiating the model so that the classification head init is reproducible
     set_seed(config.seed)
     model = AutoModelForSequenceClassification.from_pretrained(
@@ -37,10 +61,10 @@ def train(config: RunConfig, runtime: Runtime, train_ds: Dataset, eval_ds: Datas
         label2id=label2id,
         id2label={i: name for name, i in label2id.items()},
     )
-    shutil.rmtree(runtime.output_dir, ignore_errors=True)
+    shutil.rmtree(output_dir, ignore_errors=True)
     device_batch_size = min(config.batch_size, runtime.device_batch_size)
     args = TrainingArguments(
-        output_dir=runtime.output_dir,
+        output_dir=output_dir,
         num_train_epochs=config.n_epochs,
         learning_rate=config.learning_rate,
         weight_decay=config.weight_decay,
@@ -50,11 +74,7 @@ def train(config: RunConfig, runtime: Runtime, train_ds: Dataset, eval_ds: Datas
         bf16=torch.cuda.is_available(),
         eval_strategy="epoch",
         logging_strategy="epoch",
-        save_strategy="epoch",
-        save_only_model=True,  # checkpoints are only used to reload the best epoch, never to resume
-        save_total_limit=2,
-        load_best_model_at_end=True,
-        metric_for_best_model="f1_macro",
+        save_strategy="no",  # the best epoch is kept in memory by _KeepBestEpoch
         report_to="none",
         seed=config.seed,
     )
@@ -65,12 +85,12 @@ def train(config: RunConfig, runtime: Runtime, train_ds: Dataset, eval_ds: Datas
         eval_dataset=eval_ds,
         data_collator=DataCollatorWithPadding(tokenizer),
         compute_metrics=_f1_macro,
-        callbacks=([EarlyStoppingCallback(config.early_stopping_patience)]
-                   if config.early_stopping_patience is not None else []),
+        callbacks=[keep_best := _KeepBestEpoch(config.early_stopping_patience)],
     )
     trainer.train()
-    shutil.rmtree(runtime.output_dir, ignore_errors=True)  # best model is loaded in memory
-    return trainer.model, trainer.state.log_history
+    shutil.rmtree(output_dir, ignore_errors=True)
+    model.load_state_dict(keep_best.best_weights)
+    return model, trainer.state.log_history
 
 
 @torch.no_grad()

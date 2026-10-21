@@ -446,3 +446,36 @@ Dataset preparation stays outside the pipeline.
     file must contain the text (content), label (bias_text), topic,
     source and, for the stratified grid entries, year columns.
   Checked end to end on the full misinfo corpus (2-layer BERT, CPU).
+
+
+12. RUNNING ON THE SLURM CLUSTER, FIRST GPU RUN
+-----------------------------------------------
+  - train refuses to start with more than one visible GPU: the Trainer
+    would split batches over them and silently multiply the batch size.
+  - --shard i/n: job i of n runs the configs whose run_id hash is i mod n
+    (stable as runs complete). scripts/train.sbatch runs one shard per
+    array task (sbatch --array=0-7 scripts/train.sbatch CONFIG).
+  - Checkpoints go to models/<run_id> (concurrent jobs no longer share
+    models/current); the sample cache is written atomically.
+  - scripts/smoke_test.sbatch + config_files/smoke-test.json: one real run
+    and its regressions on one GPU, failing fast if CUDA is unusable.
+  - requirements.txt read "statsmodelstqdm" (missing newline when adding
+    tqdm), so pip install -e . failed. Fixed.
+
+First run (RTX A6000, misinfo, bert-base, N=500): ~60 s per run (44 s
+training, 24k headlines predicted in ~5 s), regressions ~20 s.
+
+BUG found by that run, fixed: the best epoch was not fully restored.
+transformers 5.x saves BERT checkpoints with legacy LayerNorm names
+(gamma / beta); the Trainer's load_best_model_at_end reloads them by
+name and silently skipped all 50 LayerNorm tensors, which kept the last
+epoch's values. With early stopping the last epoch is never the best, so
+nearly every run was affected. Fix: a callback keeps the best epoch's
+weights in memory and implements early stopping; no checkpoint is saved
+or reloaded. Checked: the returned model equals the best epoch's weights
+exactly (all tensors), with and without early stopping. The smoke-test
+run made before the fix was moved to results/invalid-layernorm-reload/.
+
+Also checked: gradient accumulation is correct (SGD update with 4x4
+accumulation = one batch of 16, ratio 1.002); the logged train_loss is
+summed over accumulation steps (reporting only).

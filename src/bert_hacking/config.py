@@ -104,7 +104,7 @@ class Runtime:
     """Execution settings: they change speed and memory use, not results."""
     device_batch_size: int = 4
     prediction_batch_size: int = 256
-    output_dir: str = "./models/current"
+    checkpoints_dir: str = "./models"  # one subfolder per run, deleted when the run ends
     test_mode: bool = False  # train and predict on 20 rows, save nothing
 
 

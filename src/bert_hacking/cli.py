@@ -24,12 +24,20 @@ log = logging.getLogger("bert_hacking")
 
 
 def train(args) -> str:
+    import torch
+    if torch.cuda.device_count() > 1:
+        # The Trainer would split each batch over all visible GPUs, silently multiplying the
+        # effective batch size: run one job per GPU instead (see scripts/train.sbatch)
+        raise RuntimeError(f"{torch.cuda.device_count()} GPUs visible: expose a single one "
+                           "(CUDA_VISIBLE_DEVICES, or --gres=gpu:1 with SLURM)")
+    shard, n_shards = _parse_shard(args.shard)
     experiment = Experiment.load(args.config)
     subsample = json.loads(Path(args.subsample).read_text()) if args.subsample else None
     runtime = Runtime(args.device_batch_size, args.prediction_batch_size, test_mode=args.test_mode)
     for spec in experiment.datasets:
-        configs = [c for c in experiment.run_configs(spec, subsample) if not storage.is_done(c.run_id)]
-        log.info("%s: %d runs to do", spec.name, len(configs))
+        configs = [c for c in experiment.run_configs(spec, subsample)
+                   if int(c.run_id, 16) % n_shards == shard and not storage.is_done(c.run_id)]
+        log.info("%s: %d runs to do (shard %d/%d)", spec.name, len(configs), shard, n_shards)
         if not configs:
             continue
         corpus = data.load_corpus(spec)
@@ -41,6 +49,14 @@ def train(args) -> str:
             except Exception:
                 log.error("Run %s failed\n%s", config.run_id, traceback.format_exc())
     return status_report(experiment, subsample)
+
+
+def _parse_shard(value: str) -> tuple[int, int]:
+    """"i/n" -> (i, n): this job runs the configs whose run_id hash is i modulo n."""
+    shard, n_shards = (int(x) for x in value.split("/"))
+    if not 0 <= shard < n_shards:
+        raise ValueError(f"--shard must be i/n with 0 <= i < n, got {value}")
+    return shard, n_shards
 
 
 def regress(args) -> str:
@@ -140,6 +156,8 @@ def main() -> None:
     p.add_argument("--device-batch-size", type=int, default=4)
     p.add_argument("--prediction-batch-size", type=int, default=256)
     p.add_argument("--test-mode", action="store_true", help="20 rows per split, save nothing")
+    p.add_argument("--shard", default="0/1",
+                   help="i/n: run only the i-th of n disjoint parts of the configs (one per parallel job)")
     p.set_defaults(command=train, notify=True)
 
     p = commands.add_parser("regress", help="run the regressions for every run not regressed yet")

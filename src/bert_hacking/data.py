@@ -107,7 +107,9 @@ def sample(df: pd.DataFrame, config: RunConfig) -> pd.DataFrame:
     else:
         ids = _draw_ids(df, config)
         cache.parent.mkdir(parents=True, exist_ok=True)
-        pd.Series(ids, name="ID").to_csv(cache, index=False)
+        tmp = cache.with_suffix(f".{os.getpid()}.tmp")  # atomic: concurrent jobs may write the same file
+        pd.Series(ids, name="ID").to_csv(tmp, index=False)
+        os.replace(tmp, cache)
     return df[df["ID"].isin(ids)]
 
 

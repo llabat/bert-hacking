@@ -1,0 +1,11 @@
+[
+    {
+        "N_annotated": 500,
+        "splits_ratio": [80, 10, 10],
+        "sampling_method": {"balance": "random"},
+        "model_name": "google-bert/bert-base-uncased",
+        "learning_rate": 2e-5,
+        "weight_decay": 0.01,
+        "batch_size": 16
+    }
+]
