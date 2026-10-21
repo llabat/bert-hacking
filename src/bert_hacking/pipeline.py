@@ -51,12 +51,23 @@ def run(config: RunConfig, runtime: Runtime, train_df: pd.DataFrame, predict_df:
             log.info("Macro-F1 on test: %s", score)
 
         with _timed(timings, "prediction"):
-            # Cached: the inference set is the same for every run of a dataset x model
-            records, predict_length = data.encode(data.dichotomize(predict_df, config.dichotomization_label),
-                                                  tokenizer, config.model_name, label2id, config.long_texts,
-                                                  cache=True)
-            chunks = model.predict(trained, _dataset(records, runtime), tokenizer, runtime.prediction_batch_size)
-            predictions = model.aggregate(chunks, label2id, policies)
+            # Documents of the inference set annotated for this run keep their gold label, as a
+            # researcher would; only the others are predicted.
+            inference = data.dichotomize(predict_df, config.dichotomization_label)
+            annotated_ids = set(sample["ID"])
+            annotated = inference["ID"].isin(annotated_ids)
+            # Tokenize the whole inference set: cached, as it is the same for every run of a
+            # dataset x model
+            records, predict_length = data.encode(inference, tokenizer, config.model_name, label2id,
+                                                  config.long_texts, cache=True)
+            to_predict = [r for r in records if r["ID"] not in annotated_ids]
+            chunks = model.predict(trained, _dataset(to_predict, runtime), tokenizer, runtime.prediction_batch_size)
+            gold = inference.loc[annotated, ["ID", "LABEL"]].rename(columns={"LABEL": "GS-LABEL"})
+            predictions = (pd.concat([model.aggregate(chunks, label2id, policies).assign(ANNOTATED=False),
+                                      gold.assign(**{p: gold["GS-LABEL"] for p in policies}, ANNOTATED=True)])
+                           .sort_values("ID", ignore_index=True))
+            log.info("Inference set: %d documents predicted, %d annotated (gold labels)",
+                     (~predictions["ANNOTATED"]).sum(), predictions["ANNOTATED"].sum())
     finally:
         del trained
         model.free_memory()
@@ -68,6 +79,7 @@ def run(config: RunConfig, runtime: Runtime, train_df: pd.DataFrame, predict_df:
         "effective_distrib": distribution,
         "effective_context_window_for_training": train_length,
         "effective_context_window_for_inference": predict_length,
+        "n_annotated_in_inference": int(annotated.sum()),
         "chunk_overlap": CHUNK_OVERLAP,
         "policies": list(policies),
         "trainer_logs": trainer_logs,

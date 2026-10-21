@@ -31,6 +31,7 @@ class DatasetSpec:
     covariates: list[str]
     extra_cols: list[str] = field(default_factory=list)
     sep: str = ","
+    min_hypothesis_size: int = 0  # covariate values with fewer documents are not tested
 
     @classmethod
     def from_json(cls, d: dict) -> "DatasetSpec":
@@ -46,6 +47,7 @@ class DatasetSpec:
             covariates=list(d["columns-for-independant-variables"]),
             extra_cols=list(d.get("extra_cols_to_keep", [])),
             sep=d.get("csv-sep", ","),
+            min_hypothesis_size=int(d.get("min-hypothesis-size", 0)),
         )
 
 

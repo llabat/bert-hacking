@@ -77,7 +77,7 @@ def _gold_table(spec, label: str) -> pd.DataFrame:
 
 
 def _gold(gold_df: pd.DataFrame, spec, label: str) -> dict:
-    gold = gold_regressions(gold_df, label, spec.covariates)
+    gold = gold_regressions(gold_df, label, spec.covariates, spec.min_hypothesis_size)
     storage.write_json(storage.REGRESSIONS / f"gold-{spec.name}-{label}.json",
                        [{"regression_col": c, "regression_unique_value": v, **res} for (c, v), res in gold.items()])
     return gold
@@ -89,11 +89,11 @@ def _regress_run(run_id: str, gold_df: pd.DataFrame, spec, label: str, gold: dic
     if set(predictions["ID"]) != set(gold_df["ID"]):
         raise ValueError(f"Run {run_id}: predicted IDs differ from the inference set")
     records = []
-    for policy in predictions.columns.drop(["ID", "GS-LABEL"]):  # one column per policy
+    for policy in predictions.columns.drop(["ID", "GS-LABEL", "ANNOTATED"]):  # one column per policy
         df = gold_df.merge(predictions[["ID", policy]].rename(columns={policy: "PRED-LABEL"}), on="ID")
         records += [{"run_id": run_id, "dataset_name": spec.name, "dichotomization_label": label,
                      "policy": policy, **r}
-                    for r in regress_run(df, label, spec.covariates, gold)]
+                    for r in regress_run(df, label, gold)]
     storage.write_json(storage.REGRESSIONS / f"{run_id}.json", records)
 
 

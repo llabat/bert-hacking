@@ -13,8 +13,8 @@
 ### Selection du jeu de données et prétraitement
 
 - Choix d'un jeu de données avec **au moins 2000 éléments** et qui **contient des métadonnées intéressantes**. _Jeux de données considérés: manifestos (Léo), ideology news (Axel), misinfo (Alexandre)._
-- Création des splits (Train, Test, Inférence). `N_annotated` est un hyperparamètre, `N_inference` doit correspondre au nombre d'éléments annotés dans le papier LLM Hacking (p.9). 
-    - Possibilité d'essayer d'avoir des overlaps entre l'ensemble d'entraînement / ensemble d'inference
+- Pas d'ensemble d'inférence mis de côté. Chaque run tire `N_annotated` documents (hyperparamètre) dans le corpus entier, les découpe en Train / Eval / Test pour le fine-tuning, puis prédit le reste du corpus. Les régressions portent sur le corpus entier : label gold pour les documents annotés, label prédit pour les autres.
+    - _À discuter : taille du corpus (corpus complet, ou sous-échantillon de la taille utilisée dans LLM Hacking p.9, ex. misinfo 9 991 utilisés / 25 164)._
 - Les splits doivent être créés par tirage aléatoire _(vérifier qu'il n'y a pas de doublon)_. Le tirage peut être stratifié (à documenter).
     - _Possibilité d'étendre à un tirage non aléatoire similaire à une situation d'active learning._
  
@@ -69,7 +69,7 @@
         - mean
         - max
     - *Hyperparamètres supplémentaires: `sampling_method` (active ou random)*
-- On génère les labels sur l'ensemble d'inférence.
+- On génère les labels sur le reste du corpus ; les documents annotés gardent leur label gold.
 
 Retravailler leur risque? comment on fait pour pondérer correctement enlever des configs absured
 

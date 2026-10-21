@@ -392,3 +392,35 @@ extra cell comparing risks across policies. Its outputs were cleared: they
 came from pre-fix runs (saving_logs-dodgy.json) and remain in main's
 history. Checked by executing every cell on synthetic results (plotly
 stubbed; it is not in requirements.txt).
+
+
+10. INFERENCE ON THE FULL CORPUS
+--------------------------------
+Design decision: no held-out inference set. Each run annotates (samples)
+N_annotated documents of the corpus, trains on them, and predicts the
+rest of the corpus; regressions use the whole corpus, with gold labels
+for the run's annotated documents and predicted labels for the others,
+as a researcher would. The gold regressions are therefore identical for
+every run. The previous held-out design (README / PROTOCOLE_EXP.md, and
+the ideology_news config with separate training / inference files) is
+abandoned; ideology_news must switch to its full corpus to be comparable.
+
+  - pipeline: inference documents that were annotated for the run keep
+    their gold label and are not predicted; predictions.csv gets an
+    ANNOTATED column; run.json gets n_annotated_in_inference. With
+    separate, disjoint files nothing changes.
+  - regression: hypotheses are covariate values with at least
+    min-hypothesis-size documents (new dataset option, default 0), most
+    frequent first; missing values are never tested. Run regressions use
+    the hypotheses of the gold regressions.
+  - misinfo (config_files/config-misinfo.json, data/misinfo-full.csv):
+    train + val + test of Misinfo Reaction Frames (24,490 headlines; the
+    two cancer files are not included), ID = <split>-<row>, year from
+    date ("unknown" if missing), source names cleaned (lowercase; single-
+    platform variants such as "Facebook posts", "FB users" -> facebook;
+    raw values kept in source_raw). Covariate: source, min 100 headlines
+    -> 47 hypotheses covering 67% of headlines. Positive label: misinfo.
+    Stratified sampling on type (year strata too small for N >= 1000).
+  Checked end to end on the full misinfo corpus with a 2-layer BERT on CPU:
+  60 annotated headlines keep gold labels, 24,430 predicted, 47 gold and
+  2 x 47 predicted regressions fitted.

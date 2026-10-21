@@ -47,6 +47,10 @@ are reported per policy.
 Training stops early after `early_stopping_patience` epochs (default 1, `null` to disable)
 without eval macro-F1 improvement; the best epoch is kept.
 
+Each run predicts the inference file except the documents it annotated, which keep their gold
+label; pointing `filepath-train` and `filepath-predict` to the same full corpus gives the
+protocol's design (regressions on the whole corpus).
+
 A run is identified by a hash of its config (`RunConfig.run_id`), so it is done
 when `results/runs/<run_id>/run.json` exists; see `src/bert_hacking/storage.py`
 for the layout of `results/`. Logs go to `logs/bert-hacking.log`.
@@ -65,15 +69,14 @@ for the layout of `results/`. Logs go to `logs/bert-hacking.log`.
 
 Le but est de reproduire l'expérience d'annotation et croisement annotations / métadonnées à l'aide de regressions linéaires OLS. Pour ce faire on procède en 2 étapes: 
 
-- Fine-tuning de BERT-models et génération des labels sur un ensemble d'inférence
+- Fine-tuning de BERT-models et génération des labels sur le corpus entier
 - Regression linéaire $\text{label}\approx \text{metadonnée}$ et analyse des résultats
 
 ### 1. Fine-tuning de BERT-models
 
 1. Choix d'un jeu de données:
-  - doit contenir au moins 2000 éléments pour l'entraînement + le nombre d'annotations utilisées pour l'inférence (cf p.9)<br/>_ex: pour un nombre d'annotation p9 de 3000, il faut que le jeux de données contienne au moins 3000 + 2000 textes annotés._
   - doit contenir des métadonnées intéressantes
-  - le tirage des lignes utilisées pour l'inférence doit être tiré aléatoirement à partir du jeux de donnée entier, les lignes non sélectionnées peuvent être utilisées pour le fine-tuning. 
+  - pas d'ensemble d'inférence mis de côté : chaque run tire ses `N_annotated` documents (annotés) dans le corpus entier, entraîne dessus et prédit le reste du corpus. Les régressions portent sur le corpus entier, avec le label gold pour les documents annotés et le label prédit pour les autres, comme le ferait un·e chercheur·se. Les régressions gold sont donc les mêmes pour tous les runs.
   - Pour du multiclasse, le jeux de données doit être binarisé.
   - <span style="background-color:orange;font-weight:bold;">Pour le moment nous avons choisi 3 jeux de données: ideology news, manifestos et misinfo</span>
   - <span style="background-color:orange;font-weight:bold;">Pour des limites en terme de temps de calcul, nous nous autorisons à abaisser le nombre d'annotations à 3000?? 5000??</span>
@@ -82,7 +85,7 @@ Le but est de reproduire l'expérience d'annotation et croisement annotations / 
   - toute la procédure est seedée pour la reproductibilité
   - Pour les textes dépassant la fenêtre de contexte on chunk les entrées avec des chunks de la taille de la fenêtre de contexte et un overlap de 50 tokens. **Les chunks de taille inférieure à 10% de la taille d'un chunk (typiquement la fin d'une séquence) sont ignorés**
   - <span style="background-color:orange;font-weight:bold;">en l'état l'espace d'exploration est constitué de 11,520 combinaisons par tâche (dataset x label binarisé). Pour limiter le temps de calcul, nous procédons à un tirage aléatoire de 60 configurations par valeur de `N_annotated` et `model_name` = 60 x 4 x 4 = 960 configurations par tâches</span>
-3. Prédiction sur le jeu d'inférence et enregistrement des prédictions 
+3. Prédiction sur le reste du corpus (les documents annotés gardent leur label gold) et enregistrement des prédictions 
 
 [^n-annotated-values]: `N_annotated` values: 500, 1000, 1500, 2000
 [^splits-ratio-values]: `splits_ratio` values: [80-10-10], [70,15,15], [50,10,40]

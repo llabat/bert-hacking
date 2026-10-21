@@ -75,23 +75,27 @@ def errors(gold: dict, pred: dict, gold_labels: pd.Series, pred_labels: pd.Serie
     }
 
 
-def hypotheses(df: pd.DataFrame, covariates: list[str]) -> list[tuple[str, object]]:
-    """(covariate, value) pairs to test, in order of first appearance."""
-    return [(col, value) for col in covariates for value in df[col].unique()]
+def hypotheses(df: pd.DataFrame, covariates: list[str], min_size: int = 0) -> list[tuple[str, object]]:
+    """(covariate, value) pairs to test: values with at least `min_size` documents, most
+    frequent first. Missing values are never tested."""
+    return [(col, value) for col in covariates
+            for value, count in df[col].value_counts().items() if count >= min_size]
 
 
-def gold_regressions(df: pd.DataFrame, label: str, covariates: list[str]) -> dict[tuple[str, object], dict]:
-    """`df` has columns GS-LABEL and the covariates."""
+def gold_regressions(df: pd.DataFrame, label: str, covariates: list[str],
+                     min_size: int = 0) -> dict[tuple[str, object], dict]:
+    """`df` has columns GS-LABEL and the covariates. Defines the hypotheses of the task."""
     gold_labels = df["GS-LABEL"] == label
-    return {(col, value): logit(df[col] == value, gold_labels) for col, value in hypotheses(df, covariates)}
+    return {(col, value): logit(df[col] == value, gold_labels)
+            for col, value in hypotheses(df, covariates, min_size)}
 
 
-def regress_run(df: pd.DataFrame, label: str, covariates: list[str],
-                gold: dict[tuple[str, object], dict]) -> list[dict]:
-    """`df` has columns GS-LABEL, PRED-LABEL and the covariates. One record per hypothesis."""
+def regress_run(df: pd.DataFrame, label: str, gold: dict[tuple[str, object], dict]) -> list[dict]:
+    """`df` has columns GS-LABEL, PRED-LABEL and the covariates. One record per hypothesis
+    of `gold`."""
     gold_labels, pred_labels = df["GS-LABEL"] == label, df["PRED-LABEL"] == label
     results = []
-    for col, value in hypotheses(df, covariates):
+    for col, value in gold:
         result = {"regression_col": col, "regression_unique_value": value}
         if not gold[col, value]["success"]:
             # No point in comparing with a failed gold-standard regression
