@@ -1,7 +1,8 @@
 import numpy as np 
 
 class LoopConfig:
-
+    """Config object so set all parameters, default values and types and conditions
+    for equality"""
     LOOP_DEFAULT = {
         "N_annotated": 500,
         "sampling_method": {"balance": "random", "stratified": None},
@@ -55,6 +56,7 @@ class LoopConfig:
     ]
 
     def __extract_value(self, param_name:str, **kwargs):
+        """Extract the values and ensure proper type with edgecases"""
         if param_name == "splits_ratio":
             splits_ratio_as_list = list(kwargs.get("splits_ratio", self.LOOP_DEFAULT["splits_ratio"]))
             try: 
@@ -96,10 +98,6 @@ class LoopConfig:
 
 
     def __init__(self, dataset_name : str, dichotomization_label : str, **kwargs) -> None:
-        """
-        Takes in any kwargs and return a dictionnary with the expected keys, default 
-        values and format
-        """
         self.dataset_name = str(dataset_name)
         self.dichotomization_label = str(dichotomization_label)
 
@@ -126,18 +124,23 @@ class LoopConfig:
         self.OVERLAP, self.AT_LEAST, self.THRESHOLD = None, None, None
 
     def set_fixed_parameters(self, OVERLAP: int, AT_LEAST: int|None, THRESHOLD:int|None)->None:
+        """setter for chunking and aggregation. Are not meant to change this often."""
         self.OVERLAP = OVERLAP 
         self.AT_LEAST = AT_LEAST
         self.THRESHOLD = THRESHOLD
 
     def set_label_id_mapper(self, label2id: dict, id2label: dict) -> None:
+        """set label2id and id2label for later use"""
         self.label2id = label2id
         self.id2label = id2label
 
     def to_dict(self) -> dict:
+        """Return the defining parameters.
+        defining as in they're used for assessing equality"""
         return {key : self.__getattribute__(key) for key in self.VARIABLES_TO_CHECK_FOR_EQUALITY}
     
     def __eq__(self, __value: object) -> bool:
+        """Check for equality by assessing the defining values equality"""
         if not isinstance(__value, LoopConfig):
             return TypeError("Can only check equality with LOOP_CONFIG objects")
         check_list = [
@@ -146,5 +149,5 @@ class LoopConfig:
         ]
         return np.array(check_list).all()
 
-    def __str__(self) -> bool: 
+    def __str__(self) -> bool:
         return " | ".join([f'{k}:{v}' for k,v in self.to_dict().items()])
