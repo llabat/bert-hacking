@@ -33,6 +33,7 @@ def train(args) -> str:
         if not configs:
             continue
         train_df = data.load_texts(spec.train_path, spec)
+        data.check_labels(train_df, spec)
         predict_df = data.load_texts(spec.predict_path, spec)
         for config in configs:
             log.info("Run %s: %s", config.run_id, config)

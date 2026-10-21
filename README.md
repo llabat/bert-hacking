@@ -34,6 +34,10 @@ bert-hacking sample-configs --space config_files/exploration-space-english.json 
 If `EMAIL_FROM`, `EMAIL_TO` and `EMAIL_FROM_PWD` are set (environment or `.env`),
 `train` and `regress` send an email when they stop.
 
+For a binary dataset, list only one of its two labels in `"labels"`: the other would be the
+same task with the positive class swapped (`train` refuses both). Pick the positive label
+deliberately, as the `any` policy is not symmetric.
+
 Texts longer than a model's window are chunked (`"long_texts": "chunk"`, default) or
 truncated (`"truncate"`); add `"long_texts": ["chunk", "truncate"]` to the grid to compare
 both. Chunk runs produce two document-level predictions, `any` (any chunk positive) and

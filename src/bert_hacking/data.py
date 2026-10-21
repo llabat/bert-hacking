@@ -30,6 +30,21 @@ def load_texts(path: str, spec: DatasetSpec) -> pd.DataFrame:
     return df
 
 
+def check_labels(df: pd.DataFrame, spec: DatasetSpec) -> None:
+    """Fail early on a dataset's label list: every listed label must exist, and a binary
+    dataset must list only one of its two labels."""
+    values = set(df["LABEL"])
+    missing = set(spec.labels) - values
+    if missing:
+        raise ValueError(f"{spec.name}: labels {sorted(missing)} not found, available: {sorted(values)}")
+    if len(values) == 2 and len(spec.labels) == 2:
+        raise ValueError(
+            f"{spec.name} is binary {sorted(values)}: list only one of its labels. Both tasks "
+            f"would be the same task with the positive class swapped: twice the compute, "
+            f"twice the weight in the risks, and the 'any' policy would differ between them "
+            f"only because of which label is called positive.")
+
+
 def label_maps(label: str) -> tuple[dict[str, int], dict[int, str]]:
     label2id = {label: 1, f"not-{label}": 0}
     return label2id, {i: name for name, i in label2id.items()}
