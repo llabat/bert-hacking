@@ -479,3 +479,18 @@ run made before the fix was moved to results/invalid-layernorm-reload/.
 Also checked: gradient accumulation is correct (SGD update with 4x4
 accumulation = one batch of 16, ratio 1.002); the logged train_loss is
 summed over accumulation steps (reporting only).
+
+Later fixes from the cluster runs:
+  - torch reinstalled as 2.12.0+cu126 (was +cu130): CUDA 13 builds need a
+    recent driver and some nodes run 525 (CUDA 12.0); 12.x builds run on
+    any driver >= 525.60.
+  - smoke_test.sbatch creates a CUDA context in its GPU check, so a GPU
+    already held by another process (exclusive mode) fails the job at once;
+    train stops the job on torch.AcceleratorError instead of failing every
+    run of its shard.
+  - early_stopping_patience default 1 -> 2: on the first good GPU run, eval
+    F1 tied (0.694, 0.694) on a 50-document eval split and patience 1 stopped
+    training after 2 epochs.
+  - On Turing GPUs (Titan RTX) bf16 is emulated but fast enough (~30 s per
+    misinfo run); kept so that runs on Ampere and Turing use the same
+    precision.

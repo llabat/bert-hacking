@@ -67,7 +67,8 @@ class RunConfig:
     long_texts: str = "chunk"  # texts longer than the model's window: "chunk" or "truncate"
     # Stop after this many epochs without eval macro-F1 improvement (None: always run n_epochs).
     # The best epoch is kept either way, so this only matters if F1 would improve again later.
-    early_stopping_patience: int | None = 1
+    # 2 rather than 1: eval splits are small (50 documents at N=500), so ties and dips are common.
+    early_stopping_patience: int | None = 2
 
     def __post_init__(self):
         # Normalize JSON values (0 vs 0.0, list vs tuple, missing keys) so that equal

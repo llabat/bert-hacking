@@ -46,6 +46,8 @@ def train(args) -> str:
             log.info("Run %s: %s", config.run_id, config)
             try:
                 pipeline.run(config, runtime, corpus)
+            except torch.AcceleratorError:
+                raise  # the GPU is unusable (e.g. held by another process): every next run would fail too
             except Exception:
                 log.error("Run %s failed\n%s", config.run_id, traceback.format_exc())
     return status_report(experiment, subsample)

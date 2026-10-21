@@ -8,7 +8,7 @@
 #   sbatch scripts/smoke_test.sbatch config_files/config-loop.json
 
 #SBATCH --job-name=bert-hacking-smoke
-#SBATCH --partition=hard
+#SBATCH --partition=electronic
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
@@ -22,12 +22,13 @@ eval "$(micromamba shell hook --shell bash)"
 micromamba activate "${BERT_HACKING_ENV:-berthacking}"
 cd "$SLURM_SUBMIT_DIR"
 
-# Fail fast if torch cannot use the GPU (e.g. driver too old for torch's CUDA build):
-# otherwise training silently falls back to CPU
+# Fail fast if torch cannot use the GPU: driver too old for torch's CUDA build (training would
+# silently fall back to CPU), or GPU already held by another process (exclusive mode)
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
 python - <<'EOF'
 import torch
 assert torch.cuda.is_available(), f"CUDA unavailable: torch {torch.__version__} built for CUDA {torch.version.cuda}"
+torch.zeros(1, device="cuda")  # creates a context: fails if the GPU is held by another process
 print(f"torch {torch.__version__} (CUDA {torch.version.cuda}) on {torch.cuda.get_device_name(0)}, "
       f"bf16 supported: {torch.cuda.is_bf16_supported()}")
 EOF
