@@ -2,17 +2,14 @@
     "datasets": [
         {
             "name": "misinfo",
-            "filepath-train": "./data/misinfo-full.csv",
-            "filepath-predict": "./data/misinfo-full.csv",
-            "filepath-metadata": "./data/misinfo-full.csv",
+            "filepath": "./data/misinfo-full.csv",
+            "csv-sep": ",",
+            "id_col": "ID",
             "text_col": "headline",
             "label_col": "gold_label",
-            "id_col": "ID",
             "labels": ["misinfo"],
-            "columns-for-independant-variables": ["source"],
-            "min-hypothesis-size": 100,
-            "extra_cols_to_keep": ["type"],
-            "csv-sep": ","
+            "columns-for-independant-variables": ["source", "type"],
+            "min-hypothesis-size": 100
         }
     ],
     "parameters": {

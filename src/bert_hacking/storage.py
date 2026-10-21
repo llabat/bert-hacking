@@ -2,8 +2,8 @@
 
 results/
   runs/<run_id>/run.json                 config, scores per policy, timings, trainer logs
-  runs/<run_id>/predictions.csv          inference set, per document: ID, GS-LABEL, ANNOTATED, one column
-                                         per policy (documents annotated for the run keep their gold label)
+  runs/<run_id>/predictions.csv          corpus, per document: ID, GS-LABEL, ANNOTATED, one column per
+                                         policy (documents annotated for the run keep their gold label)
   runs/<run_id>/predictions-chunks.csv   predicted documents, per chunk: ID, ID_CHUNK, GS-LABEL, P-POSITIVE
   runs/<run_id>/test.csv                 same two tables for the test split
   runs/<run_id>/test-chunks.csv

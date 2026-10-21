@@ -424,3 +424,25 @@ abandoned; ideology_news must switch to its full corpus to be comparable.
   Checked end to end on the full misinfo corpus with a 2-layer BERT on CPU:
   60 annotated headlines keep gold labels, 24,430 predicted, 47 gold and
   2 x 47 predicted regressions fitted.
+
+
+11. ONE CORPUS FILE PER DATASET
+-------------------------------
+With inference on the full corpus, the three paths of a dataset entry
+(filepath-train / -predict / -metadata) always pointed to the same data.
+A dataset is now one CSV ("filepath"): ID, text and label columns (no
+missing values) plus metadata columns, all kept. Covariates may have
+missing values (never tested); stratification columns may not (checked
+when sampling). extra_cols_to_keep is gone. The old keys raise an error
+pointing to the README, which now documents the dataset requirements.
+Dataset preparation stays outside the pipeline.
+  - Binary covariates without missing values are tested once (their two
+    values are the same hypothesis with the sign flipped), like binary
+    labels.
+  - config-misinfo.json: covariates source (>= 100 headlines) and type
+    (climate / covid) -> 48 hypotheses.
+  - config-loop.json (ideology_news) now points to ideology_news-full.csv,
+    read with "," as the old code did for that file. Not verified: the
+    file must contain the text (content), label (bias_text), topic,
+    source and, for the stratified grid entries, year columns.
+  Checked end to end on the full misinfo corpus (2-layer BERT, CPU).

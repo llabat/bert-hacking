@@ -20,32 +20,31 @@ POLICIES = {"chunk": ("any", "mean"), "truncate": ("trunc",)}
 
 @dataclass(frozen=True)
 class DatasetSpec:
+    """A corpus: one CSV with an ID, a text and a label column, plus metadata columns.
+    Every run samples its annotated documents from it and predicts the rest of it."""
     name: str
-    train_path: str
-    predict_path: str
-    metadata_path: str
+    path: str
     text_col: str
     label_col: str
     id_col: str
     labels: list[str]
     covariates: list[str]
-    extra_cols: list[str] = field(default_factory=list)
     sep: str = ","
     min_hypothesis_size: int = 0  # covariate values with fewer documents are not tested
 
     @classmethod
     def from_json(cls, d: dict) -> "DatasetSpec":
+        if "filepath" not in d and "filepath-train" in d:
+            raise KeyError(f"{d.get('name')}: 'filepath-train' / 'filepath-predict' / 'filepath-metadata' "
+                           "are replaced by a single 'filepath' to the full corpus (see README)")
         return cls(
             name=d["name"],
-            train_path=d["filepath-train"],
-            predict_path=d["filepath-predict"],
-            metadata_path=d["filepath-metadata"],
+            path=d["filepath"],
             text_col=d["text_col"],
             label_col=d["label_col"],
             id_col=d["id_col"],
             labels=list(d["labels"]),
             covariates=list(d["columns-for-independant-variables"]),
-            extra_cols=list(d.get("extra_cols_to_keep", [])),
             sep=d.get("csv-sep", ","),
             min_hypothesis_size=int(d.get("min-hypothesis-size", 0)),
         )

@@ -14,19 +14,24 @@ SAMPLE_CACHE = Path(".cache/samples")
 TOKENS_CACHE = Path(".cache/tokens")
 
 
-def load_texts(path: str, spec: DatasetSpec) -> pd.DataFrame:
-    """Read a dataset CSV with standardized columns ID (str, unique), TEXT, LABEL, plus extra columns."""
-    df = pd.read_csv(path, sep=spec.sep)
+def load_corpus(spec: DatasetSpec) -> pd.DataFrame:
+    """Read the corpus with its id / text / label columns renamed ID (str, unique), TEXT, LABEL.
+    Other columns are kept as they are: covariates may have missing values (never tested),
+    stratification columns may not (checked when sampling)."""
+    df = pd.read_csv(spec.path, sep=spec.sep)
     renaming = {spec.id_col: "ID", spec.text_col: "TEXT", spec.label_col: "LABEL"}
-    missing = (set(renaming) | set(spec.extra_cols)) - set(df.columns)
+    missing = (set(renaming) | set(spec.covariates)) - set(df.columns)
     if missing:
-        raise KeyError(f"{path}: missing columns {sorted(missing)}")
-    df = df.rename(columns=renaming)[["ID", "TEXT", "LABEL", *spec.extra_cols]]
-    if df.isna().any().any():
-        raise ValueError(f"{path}: missing values\n{df.isna().sum()}")
+        raise KeyError(f"{spec.path}: missing columns {sorted(missing)}")
+    clashing = {"ID", "TEXT", "LABEL"} & (set(df.columns) - set(renaming))
+    if clashing:
+        raise ValueError(f"{spec.path}: columns {sorted(clashing)} are reserved, rename them")
+    df = df.rename(columns=renaming)
+    if df[["ID", "TEXT", "LABEL"]].isna().any().any():
+        raise ValueError(f"{spec.path}: missing values\n{df[['ID', 'TEXT', 'LABEL']].isna().sum()}")
     df["ID"] = df["ID"].astype(str)
     if not df["ID"].is_unique:
-        raise ValueError(f"{path}: IDs are not unique")
+        raise ValueError(f"{spec.path}: IDs are not unique")
     return df
 
 
@@ -64,6 +69,8 @@ def _draw_ids(df: pd.DataFrame, config: RunConfig) -> list[str]:
     """
     balance = config.sampling_method["balance"]
     strat_col = config.sampling_method["stratified"]
+    if strat_col and (strat_col not in df or df[strat_col].isna().any()):
+        raise ValueError(f"Stratification column {strat_col!r} is missing or has missing values")
     strata = df.groupby(strat_col) if strat_col else [(None, df)]
     n_base, n_remainder = divmod(config.N_annotated, len(strata))
     rng = np.random.default_rng(seed=config.seed)

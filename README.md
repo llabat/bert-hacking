@@ -10,6 +10,42 @@ conda activate bert-hacking
 pip install -e .
 ```
 
+## Datasets
+
+Any dataset fits if it is **one CSV file** (the corpus) with:
+
+- an ID column (unique), a text column and a label column, without missing values;
+  the names `ID`, `TEXT` and `LABEL` are reserved for these three;
+- the metadata columns used as covariates, which may have missing values (never tested);
+- the columns used for stratified sampling (`"stratified"` in the grid), without missing
+  values, each stratum holding at least `N_annotated / number of strata` documents.
+
+Every run samples its `N_annotated` documents from the corpus (they keep their gold label),
+fine-tunes on them and predicts the rest of the corpus; the regressions use the whole corpus.
+Preparing a dataset (merging files, deriving or cleaning columns) happens outside the pipeline.
+
+A dataset entry of the experiment file:
+
+```json
+{
+    "name": "misinfo",
+    "filepath": "./data/misinfo-full.csv",
+    "csv-sep": ",",
+    "id_col": "ID",
+    "text_col": "headline",
+    "label_col": "gold_label",
+    "labels": ["misinfo"],
+    "columns-for-independant-variables": ["source"],
+    "min-hypothesis-size": 100
+}
+```
+
+- `labels`: one binary task per label (label vs rest). For a binary dataset list only one of
+  its two labels (`train` refuses both: same task with the classes swapped), chosen
+  deliberately, as the `any` policy is not symmetric.
+- `columns-for-independant-variables`: each value with at least `min-hypothesis-size`
+  documents (default 0) is a hypothesis, `logit(1[column == value] ~ 1 + label)`.
+
 ## Usage
 
 Run from the repo root (data paths in the config files are relative to it).
@@ -34,10 +70,6 @@ bert-hacking sample-configs --space config_files/exploration-space-english.json 
 If `EMAIL_FROM`, `EMAIL_TO` and `EMAIL_FROM_PWD` are set (environment or `.env`),
 `train` and `regress` send an email when they stop.
 
-For a binary dataset, list only one of its two labels in `"labels"`: the other would be the
-same task with the positive class swapped (`train` refuses both). Pick the positive label
-deliberately, as the `any` policy is not symmetric.
-
 Texts longer than a model's window are chunked (`"long_texts": "chunk"`, default) or
 truncated (`"truncate"`); add `"long_texts": ["chunk", "truncate"]` to the grid to compare
 both. Chunk runs produce two document-level predictions, `any` (any chunk positive) and
@@ -46,10 +78,6 @@ are reported per policy.
 
 Training stops early after `early_stopping_patience` epochs (default 1, `null` to disable)
 without eval macro-F1 improvement; the best epoch is kept.
-
-Each run predicts the inference file except the documents it annotated, which keep their gold
-label; pointing `filepath-train` and `filepath-predict` to the same full corpus gives the
-protocol's design (regressions on the whole corpus).
 
 A run is identified by a hash of its config (`RunConfig.run_id`), so it is done
 when `results/runs/<run_id>/run.json` exists; see `src/bert_hacking/storage.py`

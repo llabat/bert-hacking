@@ -32,13 +32,12 @@ def train(args) -> str:
         log.info("%s: %d runs to do", spec.name, len(configs))
         if not configs:
             continue
-        train_df = data.load_texts(spec.train_path, spec)
-        data.check_labels(train_df, spec)
-        predict_df = data.load_texts(spec.predict_path, spec)
+        corpus = data.load_corpus(spec)
+        data.check_labels(corpus, spec)
         for config in configs:
             log.info("Run %s: %s", config.run_id, config)
             try:
-                pipeline.run(config, runtime, train_df, predict_df)
+                pipeline.run(config, runtime, corpus)
             except Exception:
                 log.error("Run %s failed\n%s", config.run_id, traceback.format_exc())
     return status_report(experiment, subsample)
@@ -64,16 +63,9 @@ def regress(args) -> str:
 
 
 def _gold_table(spec, label: str) -> pd.DataFrame:
-    """Inference set with gold labels (GS-LABEL) and covariates."""
-    texts = data.dichotomize(data.load_texts(spec.predict_path, spec), label)
-    metadata = pd.read_csv(spec.metadata_path, dtype={"ID": str})
-    if not metadata["ID"].is_unique:
-        raise ValueError(f"{spec.metadata_path}: IDs are not unique")
-    df = texts[["ID", "LABEL"]].rename(columns={"LABEL": "GS-LABEL"}).merge(
-        metadata[["ID", *spec.covariates]], on="ID", how="left", validate="one_to_one", indicator=True)
-    if (df.pop("_merge") != "both").any():
-        raise ValueError(f"Some inference IDs of {spec.name} are missing from {spec.metadata_path}")
-    return df
+    """The corpus with gold labels (GS-LABEL) and covariates."""
+    corpus = data.dichotomize(data.load_corpus(spec), label)
+    return corpus[["ID", "LABEL", *spec.covariates]].rename(columns={"LABEL": "GS-LABEL"})
 
 
 def _gold(gold_df: pd.DataFrame, spec, label: str) -> dict:
@@ -87,7 +79,7 @@ def _regress_run(run_id: str, gold_df: pd.DataFrame, spec, label: str, gold: dic
     warnings.filterwarnings("ignore")  # statsmodels convergence warnings, one per failed fit
     predictions = pd.read_csv(storage.run_dir(run_id) / "predictions.csv", dtype={"ID": str})
     if set(predictions["ID"]) != set(gold_df["ID"]):
-        raise ValueError(f"Run {run_id}: predicted IDs differ from the inference set")
+        raise ValueError(f"Run {run_id}: predicted IDs differ from the corpus")
     records = []
     for policy in predictions.columns.drop(["ID", "GS-LABEL", "ANNOTATED"]):  # one column per policy
         df = gold_df.merge(predictions[["ID", policy]].rename(columns={policy: "PRED-LABEL"}), on="ID")

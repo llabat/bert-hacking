@@ -1,4 +1,5 @@
-"""One run: sample, fine-tune, evaluate on the test split, predict on the inference set, save."""
+"""One run: sample the annotated documents, fine-tune, evaluate on the test split, predict the rest
+of the corpus, save."""
 import logging
 import time
 from contextlib import contextmanager
@@ -21,15 +22,16 @@ def _timed(timings: dict, name: str):
     timings[name] = time.perf_counter() - start
 
 
-def run(config: RunConfig, runtime: Runtime, train_df: pd.DataFrame, predict_df: pd.DataFrame) -> dict:
-    """`train_df` and `predict_df` come from data.load_texts. Returns the run record."""
+def run(config: RunConfig, runtime: Runtime, corpus: pd.DataFrame) -> dict:
+    """`corpus` comes from data.load_corpus. Returns the run record."""
+    corpus = data.dichotomize(corpus, config.dichotomization_label)
     label2id, _ = data.label_maps(config.dichotomization_label)
     policies = POLICIES[config.long_texts]
     timings = {}
     trained = None
     try:
         with _timed(timings, "preprocess_data"):
-            sample = data.sample(data.dichotomize(train_df, config.dichotomization_label), config)
+            sample = data.sample(corpus, config)
             distribution = sample["LABEL"].value_counts(normalize=True).sort_index().to_dict()
             log.info("Sampled %d rows, label distribution %s (requested %s)",
                      len(sample), distribution, config.sampling_method)
@@ -51,22 +53,20 @@ def run(config: RunConfig, runtime: Runtime, train_df: pd.DataFrame, predict_df:
             log.info("Macro-F1 on test: %s", score)
 
         with _timed(timings, "prediction"):
-            # Documents of the inference set annotated for this run keep their gold label, as a
-            # researcher would; only the others are predicted.
-            inference = data.dichotomize(predict_df, config.dichotomization_label)
+            # The documents annotated for this run keep their gold label, as a researcher's would;
+            # the rest of the corpus is predicted.
             annotated_ids = set(sample["ID"])
-            annotated = inference["ID"].isin(annotated_ids)
-            # Tokenize the whole inference set: cached, as it is the same for every run of a
-            # dataset x model
-            records, predict_length = data.encode(inference, tokenizer, config.model_name, label2id,
+            annotated = corpus["ID"].isin(annotated_ids)
+            # Tokenize the whole corpus: cached, as it is the same for every run of a dataset x model
+            records, predict_length = data.encode(corpus, tokenizer, config.model_name, label2id,
                                                   config.long_texts, cache=True)
             to_predict = [r for r in records if r["ID"] not in annotated_ids]
             chunks = model.predict(trained, _dataset(to_predict, runtime), tokenizer, runtime.prediction_batch_size)
-            gold = inference.loc[annotated, ["ID", "LABEL"]].rename(columns={"LABEL": "GS-LABEL"})
+            gold = corpus.loc[annotated, ["ID", "LABEL"]].rename(columns={"LABEL": "GS-LABEL"})
             predictions = (pd.concat([model.aggregate(chunks, label2id, policies).assign(ANNOTATED=False),
                                       gold.assign(**{p: gold["GS-LABEL"] for p in policies}, ANNOTATED=True)])
                            .sort_values("ID", ignore_index=True))
-            log.info("Inference set: %d documents predicted, %d annotated (gold labels)",
+            log.info("Corpus: %d documents predicted, %d annotated (gold labels)",
                      (~predictions["ANNOTATED"]).sum(), predictions["ANNOTATED"].sum())
     finally:
         del trained
@@ -79,7 +79,6 @@ def run(config: RunConfig, runtime: Runtime, train_df: pd.DataFrame, predict_df:
         "effective_distrib": distribution,
         "effective_context_window_for_training": train_length,
         "effective_context_window_for_inference": predict_length,
-        "n_annotated_in_inference": int(annotated.sum()),
         "chunk_overlap": CHUNK_OVERLAP,
         "policies": list(policies),
         "trainer_logs": trainer_logs,

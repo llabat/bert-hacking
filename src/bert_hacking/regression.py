@@ -77,9 +77,15 @@ def errors(gold: dict, pred: dict, gold_labels: pd.Series, pred_labels: pd.Serie
 
 def hypotheses(df: pd.DataFrame, covariates: list[str], min_size: int = 0) -> list[tuple[str, object]]:
     """(covariate, value) pairs to test: values with at least `min_size` documents, most
-    frequent first. Missing values are never tested."""
-    return [(col, value) for col in covariates
-            for value, count in df[col].value_counts().items() if count >= min_size]
+    frequent first. Missing values are never tested. A binary covariate without missing
+    values is tested once: its two values are the same hypothesis with the sign flipped."""
+    pairs = []
+    for col in covariates:
+        counts = df[col].value_counts()
+        if len(counts) == 2 and df[col].notna().all():
+            counts = counts.iloc[:1]
+        pairs += [(col, value) for value, count in counts.items() if count >= min_size]
+    return pairs
 
 
 def gold_regressions(df: pd.DataFrame, label: str, covariates: list[str],
